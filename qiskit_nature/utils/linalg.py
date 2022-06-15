@@ -13,8 +13,9 @@
 """Linear algebra utilities."""
 
 from __future__ import annotations
+import itertools
 
-from typing import TYPE_CHECKING, List, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from qiskit import QuantumRegister
@@ -179,3 +180,142 @@ def _swap_columns(matrix: np.ndarray, i: int, j: int) -> None:
     column_i = matrix[:, i].copy()
     column_j = matrix[:, j].copy()
     matrix[:, i], matrix[:, j] = column_j, column_i
+
+
+def low_rank_decomposition(
+    one_body_tensor: np.ndarray,
+    two_body_tensor: np.ndarray,
+    final_rank: Optional[int] = None,
+    validate: bool = True,
+    atol: float = 1e-8,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Low rank decomposition of a molecular Hamiltonian.
+
+    References:
+        - `arXiv:1808.02625`_
+        - `arXiv:2104.08957`_
+
+    .. _arXiv:1808.02625: https://arxiv.org/abs/1808.02625
+    .. _arXiv:2104.08957: https://arxiv.org/abs/2104.08957
+
+    Args:
+        one_body_tensor: The one-body tensor.
+        two_body_tensor: The two-body tensor.
+        final_rank: The desired number of terms to keep in the decomposition
+            of the two-body tensor.
+            The default behavior is to include all terms, which yields an
+            exact decomposition.
+        validate: Whether to check that the input tensors have the correct symmetries.
+        atol: Absolute numerical tolerance for input validation.
+
+    Returns:
+        The corrected one-body tensor, leaf tensors, and core tensors
+    """
+    corrected_one_body_tensor = one_body_tensor - 0.5 * np.einsum("prqr", two_body_tensor)
+    leaf_tensors, core_tensors = low_rank_two_body_decomposition(
+        two_body_tensor, final_rank, validate=validate, atol=atol
+    )
+    return corrected_one_body_tensor, leaf_tensors, core_tensors
+
+
+# TODO add truncation threshold option
+# TODO add support for complex orbitals
+def low_rank_two_body_decomposition(
+    two_body_tensor: np.ndarray,
+    final_rank: Optional[int] = None,
+    validate: bool = True,
+    atol: float = 1e-8,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Low rank decomposition of a two-body tensor.
+
+    References:
+        - `arXiv:1808.02625`_
+        - `arXiv:2104.08957`_
+
+    .. _arXiv:1808.02625: https://arxiv.org/abs/1808.02625
+    .. _arXiv:2104.08957: https://arxiv.org/abs/2104.08957
+
+    Args:
+        two_body_tensor: The two-body tensor to decompose. The tensor indices
+            should be ordered according to the "chemist" convention.
+        final_rank: The desired number of terms to keep in the decomposition.
+            The default behavior is to include all terms, which yields an
+            exact decomposition.
+        validate: Whether to check that the input tensors have the correct symmetries.
+        atol: Absolute numerical tolerance for input validation.
+    """
+    n_modes, _, _, _ = two_body_tensor.shape
+    if final_rank is None:
+        final_rank = n_modes**2
+    reshaped_tensor = np.reshape(two_body_tensor, (n_modes**2, n_modes**2))
+
+    if validate:
+        if not np.all(np.isreal(reshaped_tensor)):
+            raise ValueError("Two-body tensor must be real.")
+        if not np.allclose(reshaped_tensor, reshaped_tensor.T, atol=atol):
+            raise ValueError("Two-body tensor must be symmetric.")
+
+    outer_eigs, outer_vecs = np.linalg.eigh(reshaped_tensor)
+    leaf_tensors = []
+    core_tensors = []
+    for i in range(final_rank):
+        mat = np.reshape(outer_vecs[:, -i - 1], (n_modes, n_modes))
+        inner_eigs, inner_vecs = np.linalg.eigh(mat)
+        core_tensor = outer_eigs[-i - 1] * np.outer(inner_eigs, inner_eigs)
+        leaf_tensors.append(inner_vecs)
+        core_tensors.append(core_tensor)
+
+    return np.array(leaf_tensors), np.array(core_tensors)
+
+
+def low_rank_optimal_core_tensors(
+    two_body_tensor: np.ndarray, leaf_tensors: np.ndarray, cutoff_threshold: float = 1e-8
+) -> np.ndarray:
+    """Compute optimal low rank core tensors given fixed leaf tensors.
+
+    References:
+        - `arXiv:1808.02625`_
+        - `arXiv:2104.08957`_
+
+    .. _arXiv:1808.02625: https://arxiv.org/abs/1808.02625
+    .. _arXiv:2104.08957: https://arxiv.org/abs/2104.08957
+
+    Args:
+        two_body_tensor: The two-body tensor to decompose. The tensor indices
+            should be ordered according to the "chemistry" convention.
+        leaf_tensors: The leaf tensors of the low rank decomposition.
+        cutoff_threshold: Eigenvalues smaller than this value will be ignored
+            when solving the least-squares problem.
+    """
+    n_modes, _, _, _ = two_body_tensor.shape
+    n_tensors, _, _ = leaf_tensors.shape
+
+    metrics = np.zeros((n_tensors, n_tensors, n_modes, n_modes))
+    for i in range(n_tensors):
+        for j in range(i, n_tensors):
+            metric = (leaf_tensors[i].T @ leaf_tensors[j]) ** 2
+            metrics[i, j] = metric
+            metrics[j, i] = metric.T
+
+    dim = n_tensors * n_modes**2
+    target = np.einsum(
+        "pqrs,tpk,tqk,trl,tsl->tkl",
+        two_body_tensor,
+        leaf_tensors,
+        leaf_tensors,
+        leaf_tensors,
+        leaf_tensors,
+    )
+    target = np.reshape(target, (dim,))
+    coeffs = np.zeros((n_tensors, n_modes, n_modes, n_tensors, n_modes, n_modes))
+    for i in range(n_tensors):
+        for j in range(n_tensors):
+            coeffs[i, :, :, j, :, :] = np.einsum("kl,mn->kmln", metrics[i, j], metrics[i, j])
+    coeffs = np.reshape(coeffs, (dim, dim))
+
+    eigs, vecs = np.linalg.eigh(coeffs)
+    pseudoinverse = np.zeros_like(eigs)
+    pseudoinverse[eigs > cutoff_threshold] = eigs[eigs > cutoff_threshold] ** -1
+    solution = vecs @ (vecs.T @ target * pseudoinverse)
+
+    return np.reshape(solution, (n_tensors, n_modes, n_modes))
