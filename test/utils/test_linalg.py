@@ -53,19 +53,13 @@ class TestLowRank(QiskitNatureTestCase):
     def test_low_rank_two_body_decomposition(self):
         """Test low rank two-body decomposition."""
         n_orbitals = 5
-        one_body_tensor = np.array(random_hermitian(n_orbitals))
         two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
         leaf_tensors, core_tensors = low_rank_two_body_decomposition(two_body_tensor)
 
-        one_body_integrals = OneBodyElectronicIntegrals(ElectronicBasis.SO, one_body_tensor)
         two_body_integrals = TwoBodyElectronicIntegrals(ElectronicBasis.SO, 0.5 * two_body_tensor)
-        electronic_energy = ElectronicEnergy([one_body_integrals, two_body_integrals])
-        expected = electronic_energy.second_q_ops()["ElectronicEnergy"]
+        expected = two_body_integrals.to_second_q_op()
 
         actual = FermionicOp.zero(register_length=n_orbitals)
-        for p, q in itertools.product(range(n_orbitals), repeat=2):
-            coeff = one_body_tensor[p, q]
-            actual += FermionicOp([([("+", p), ("-", q)], coeff)])
         for p, q, r, s in itertools.product(range(n_orbitals), repeat=4):
             coeff = 0.0
             for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):

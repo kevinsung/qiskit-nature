@@ -182,10 +182,10 @@ def _asymmetric_low_rank_trotter_step_jw(
         yield BogoliubovTransform(merged_transformation_matrix), register
         # simulate off-diagonal two-body terms
         for p, q in itertools.combinations(range(n_qubits), 2):
-            yield from _rot11((register[p], register[q]), -2 * core_tensor[p, q] * time)
+            yield from _rot11((register[p], register[q]), -core_tensor[p, q] * time)
         # simulate diagonal two-body terms
         for p in range(n_qubits):
-            yield RZGate(-core_tensor[p, p] * time), (register[p],)
+            yield RZGate(-0.5 * core_tensor[p, p] * time), (register[p],)
         # update prior basis change matrix
         prior_transformation_matrix = leaf_tensor.T
 
