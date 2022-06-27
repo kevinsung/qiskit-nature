@@ -46,9 +46,10 @@ class SimulateTrotterLowRank(QuantumCircuit):
         one_body_tensor: np.ndarray,
         two_body_tensor: np.ndarray,
         time: float,
-        final_rank: Optional[int] = None,
         *,
         n_steps: int = 1,
+        final_rank: Optional[int] = None,
+        spin_basis: bool = False,
         qubit_converter: Optional[QubitConverter] = None,
         **circuit_kwargs,
     ) -> None:
@@ -70,7 +71,7 @@ class SimulateTrotterLowRank(QuantumCircuit):
 
         if isinstance(qubit_converter.mapper, JordanWignerMapper):
             operations = _simulate_trotter_low_rank(
-                register, one_body_tensor, two_body_tensor, time, final_rank, n_steps
+                register, one_body_tensor, two_body_tensor, time, n_steps, final_rank, spin_basis
             )
             for gate, qubits in operations:
                 self.append(gate, qubits)
@@ -88,13 +89,18 @@ def _simulate_trotter_low_rank(
     one_body_tensor: np.ndarray,
     two_body_tensor: np.ndarray,
     time: float,
-    final_rank: Optional[int],
     n_steps: int,
+    final_rank: Optional[int],
+    spin_basis: bool,
 ) -> Iterator[tuple[Instruction, Sequence[Qubit]]]:
     step_time = time / n_steps
     for _ in range(n_steps):
         yield AsymmetricLowRankTrotterStep(
-            one_body_tensor, two_body_tensor, step_time, final_rank=final_rank
+            one_body_tensor,
+            two_body_tensor,
+            step_time,
+            final_rank=final_rank,
+            spin_basis=spin_basis,
         ), register
 
 
@@ -114,7 +120,8 @@ class AsymmetricLowRankTrotterStep(QuantumCircuit):
         one_body_tensor: np.ndarray,
         two_body_tensor: np.ndarray,
         time: float,
-        final_rank: Optional[int],
+        final_rank: Optional[int] = None,
+        spin_basis: bool = False,
         *,
         qubit_converter: Optional[QubitConverter] = None,
         **circuit_kwargs,
@@ -137,7 +144,7 @@ class AsymmetricLowRankTrotterStep(QuantumCircuit):
 
         if isinstance(qubit_converter.mapper, JordanWignerMapper):
             operations = _asymmetric_low_rank_trotter_step_jw(
-                register, one_body_tensor, two_body_tensor, time, final_rank
+                register, one_body_tensor, two_body_tensor, time, final_rank, spin_basis
             )
             for gate, qubits in operations:
                 self.append(gate, qubits)
@@ -156,10 +163,12 @@ def _asymmetric_low_rank_trotter_step_jw(
     two_body_tensor: np.ndarray,
     time: float,
     final_rank: Optional[int],
+    spin_basis: bool,
 ) -> Iterator[tuple[Instruction, Sequence[Qubit]]]:
     n_qubits = len(register)
+    # TODO do decomposition at higher level to avoid repeated work
     corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
-        one_body_tensor, two_body_tensor, final_rank=final_rank
+        one_body_tensor, two_body_tensor, final_rank=final_rank, spin_basis=spin_basis
     )
 
     # compute basis change that diagonalizes one-body term

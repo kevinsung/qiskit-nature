@@ -186,6 +186,7 @@ def low_rank_decomposition(
     one_body_tensor: np.ndarray,
     two_body_tensor: np.ndarray,
     final_rank: Optional[int] = None,
+    spin_basis: bool = False,
     validate: bool = True,
     atol: float = 1e-8,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -205,16 +206,36 @@ def low_rank_decomposition(
             of the two-body tensor.
             The default behavior is to include all terms, which yields an
             exact decomposition.
+        spin_basis: Whether the tensors are specified in the spin-orbital basis.
+            If so, the interaction must be spin-symmetric.
         validate: Whether to check that the input tensors have the correct symmetries.
         atol: Absolute numerical tolerance for input validation.
 
     Returns:
         The corrected one-body tensor, leaf tensors, and core tensors
     """
-    corrected_one_body_tensor = one_body_tensor - 0.5 * np.einsum("prqr", two_body_tensor)
+    if spin_basis:
+        # tensors are specified in the spin-orbital basis, so reduce to
+        # spatial orbital basis assuming a spin-symmetric interaction
+        n_modes, _ = one_body_tensor.shape
+        one_body_tensor = one_body_tensor[: n_modes // 2, : n_modes // 2]
+        two_body_tensor = two_body_tensor[
+            : n_modes // 2, : n_modes // 2, : n_modes // 2, : n_modes // 2
+        ]
+        two_body_tensor = np.transpose(two_body_tensor, (2, 1, 0, 3))
+
+    sign = 1 if spin_basis else -1
+    corrected_one_body_tensor = one_body_tensor + sign * 0.5 * np.einsum("prqr", two_body_tensor)
     leaf_tensors, core_tensors = low_rank_two_body_decomposition(
         two_body_tensor, final_rank, validate=validate, atol=atol
     )
+
+    if spin_basis:
+        # expand back to spin-orbital basis
+        corrected_one_body_tensor = np.kron(np.eye(2), corrected_one_body_tensor)
+        leaf_tensors = np.kron(np.kron(np.ones((1, 1, 1)), np.eye(2)), leaf_tensors)
+        core_tensors = -np.kron(np.ones((1, 2, 2)), core_tensors)
+
     return corrected_one_body_tensor, leaf_tensors, core_tensors
 
 

@@ -13,6 +13,7 @@
 """Test linear algebra utilities."""
 
 import itertools
+from qiskit_nature.hdf5 import load_from_hdf5
 from test import QiskitNatureTestCase
 from test.random import random_two_body_tensor
 
@@ -88,6 +89,38 @@ class TestLowRank(QiskitNatureTestCase):
 
         corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
             one_body_tensor, two_body_tensor
+        )
+        actual = FermionicOp.zero(register_length=n_orbitals)
+        for p, q in itertools.product(range(n_orbitals), repeat=2):
+            coeff = corrected_one_body_tensor[p, q]
+            actual += FermionicOp([([("+", p), ("-", q)], coeff)])
+        for p, q, r, s in itertools.product(range(n_orbitals), repeat=4):
+            coeff = 0.0
+            for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):
+                coeff += np.einsum(
+                    "i,i,ij,j,j",
+                    leaf_tensor[p],
+                    leaf_tensor[q],
+                    core_tensor,
+                    leaf_tensor[r],
+                    leaf_tensor[s],
+                )
+            actual += FermionicOp([([("+", p), ("-", q), ("+", r), ("-", s)], 0.5 * coeff)])
+
+        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+
+    def test_low_rank_decomposition_spin(self):
+        """Test low rank decomposition with spin."""
+        result = load_from_hdf5("test/transformers/second_quantization/electronic/H2_sto3g.hdf5")
+        energy = result.get_property("ElectronicEnergy")
+        expected = energy.second_q_ops()["ElectronicEnergy"]
+
+        one_body_tensor = energy.get_electronic_integral(ElectronicBasis.MO, 1).to_spin()
+        two_body_tensor = 2 * energy.get_electronic_integral(ElectronicBasis.MO, 2).to_spin()
+        n_orbitals, _ = one_body_tensor.shape
+
+        corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
+            one_body_tensor, two_body_tensor, spin_basis=True
         )
         actual = FermionicOp.zero(register_length=n_orbitals)
         for p, q in itertools.product(range(n_orbitals), repeat=2):
