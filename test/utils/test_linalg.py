@@ -32,6 +32,7 @@ from qiskit_nature.utils import (
     givens_matrix,
     low_rank_decomposition,
     low_rank_two_body_decomposition,
+    low_rank_optimal_core_tensors,
 )
 
 
@@ -121,6 +122,42 @@ class TestLowRank(QiskitNatureTestCase):
 
         corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
             one_body_tensor, two_body_tensor, spin_basis=True
+        )
+        actual = FermionicOp.zero(register_length=n_orbitals)
+        for p, q in itertools.product(range(n_orbitals), repeat=2):
+            coeff = corrected_one_body_tensor[p, q]
+            actual += FermionicOp([([("+", p), ("-", q)], coeff)])
+        for p, q, r, s in itertools.product(range(n_orbitals), repeat=4):
+            coeff = 0.0
+            for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):
+                coeff += np.einsum(
+                    "i,i,ij,j,j",
+                    leaf_tensor[p],
+                    leaf_tensor[q],
+                    core_tensor,
+                    leaf_tensor[r],
+                    leaf_tensor[s],
+                )
+            actual += FermionicOp([([("+", p), ("-", q), ("+", r), ("-", s)], 0.5 * coeff)])
+
+        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+
+    def test_low_rank_decomposition_optimal_core_tensors(self):
+        """Test low rank decomposition optimal core tensors."""
+        n_orbitals = 5
+        one_body_tensor = np.array(random_hermitian(n_orbitals))
+        two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
+
+        one_body_integrals = OneBodyElectronicIntegrals(ElectronicBasis.SO, one_body_tensor)
+        two_body_integrals = TwoBodyElectronicIntegrals(ElectronicBasis.SO, 0.5 * two_body_tensor)
+        electronic_energy = ElectronicEnergy([one_body_integrals, two_body_integrals])
+        expected = electronic_energy.second_q_ops()["ElectronicEnergy"]
+
+        corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
+            one_body_tensor, two_body_tensor
+        )
+        core_tensors = low_rank_optimal_core_tensors(
+            two_body_tensor, leaf_tensors, cutoff_threshold=1e-8
         )
         actual = FermionicOp.zero(register_length=n_orbitals)
         for p, q in itertools.product(range(n_orbitals), repeat=2):

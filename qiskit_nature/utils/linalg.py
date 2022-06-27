@@ -228,7 +228,7 @@ def low_rank_decomposition(
     sign = 1 if spin_basis else -1
     corrected_one_body_tensor = one_body_tensor + sign * 0.5 * np.einsum("prqr", two_body_tensor)
     leaf_tensors, core_tensors = low_rank_two_body_decomposition(
-        two_body_tensor, final_rank, validate=validate, atol=atol
+        two_body_tensor, final_rank=final_rank, validate=validate, atol=atol
     )
 
     if spin_basis:
@@ -313,13 +313,6 @@ def low_rank_optimal_core_tensors(
     n_modes, _, _, _ = two_body_tensor.shape
     n_tensors, _, _ = leaf_tensors.shape
 
-    metrics = np.zeros((n_tensors, n_tensors, n_modes, n_modes))
-    for i in range(n_tensors):
-        for j in range(i, n_tensors):
-            metric = (leaf_tensors[i].T @ leaf_tensors[j]) ** 2
-            metrics[i, j] = metric
-            metrics[j, i] = metric.T
-
     dim = n_tensors * n_modes**2
     target = np.einsum(
         "pqrs,tpk,tqk,trl,tsl->tkl",
@@ -332,8 +325,10 @@ def low_rank_optimal_core_tensors(
     target = np.reshape(target, (dim,))
     coeffs = np.zeros((n_tensors, n_modes, n_modes, n_tensors, n_modes, n_modes))
     for i in range(n_tensors):
-        for j in range(n_tensors):
-            coeffs[i, :, :, j, :, :] = np.einsum("kl,mn->kmln", metrics[i, j], metrics[i, j])
+        for j in range(i, n_tensors):
+            metric = (leaf_tensors[i].T @ leaf_tensors[j]) ** 2
+            coeffs[i, :, :, j, :, :] = np.einsum("kl,mn->kmln", metric, metric)
+            coeffs[j, :, :, i, :, :] = np.einsum("kl,mn->kmln", metric.T, metric.T)
     coeffs = np.reshape(coeffs, (dim, dim))
 
     eigs, vecs = np.linalg.eigh(coeffs)
