@@ -17,6 +17,8 @@ from __future__ import annotations
 from typing import Optional
 
 import numpy as np
+import scipy.linalg
+import scipy.optimize
 
 
 def low_rank_decomposition(
@@ -174,3 +176,73 @@ def low_rank_optimal_core_tensors(
     solution = vecs @ (vecs.T @ target * pseudoinverse)
 
     return np.reshape(solution, (n_tensors, n_modes, n_modes))
+
+
+def low_rank_compressed_two_body_decomposition(
+    two_body_tensor, initial_leaf_tensors, method="L-BFGS-B", **options
+):
+    n_modes, _, _, _ = two_body_tensor.shape
+    n_tensors, _, _ = initial_leaf_tensors.shape
+
+    def fun(x):
+        leaf_logs = np.reshape(x, (n_tensors, n_modes, n_modes))
+        # TODO these are not antisymmetric, does it matter?
+        leaf_tensors = np.array([np.real(_expm_antihermitian(mat)) for mat in leaf_logs])
+        core_tensors = low_rank_optimal_core_tensors(two_body_tensor, leaf_tensors)
+        diff = two_body_tensor - np.einsum(
+            "tpk,tqk,tkl,trl,tsl->pqrs",
+            leaf_tensors,
+            leaf_tensors,
+            core_tensors,
+            leaf_tensors,
+            leaf_tensors,
+        )
+        return 0.5 * np.sum(diff**2)
+
+    def jac(x):
+        leaf_logs = np.reshape(x, (n_tensors, n_modes, n_modes))
+        # TODO these are not antisymmetric, does it matter?
+        leaf_tensors = np.array([np.real(_expm_antihermitian(mat)) for mat in leaf_logs])
+        core_tensors = low_rank_optimal_core_tensors(two_body_tensor, leaf_tensors)
+        diff = two_body_tensor - np.einsum(
+            "tpk,tqk,tkl,trl,tsl->pqrs",
+            leaf_tensors,
+            leaf_tensors,
+            core_tensors,
+            leaf_tensors,
+            leaf_tensors,
+        )
+        grad_leaf = -4.0 * np.einsum(
+            "pqrs,tqk,tkl,trl,tsl->tpk",
+            diff,
+            leaf_tensors,
+            core_tensors,
+            leaf_tensors,
+            leaf_tensors,
+        )
+        return np.ravel(
+            [_expm_antihermitian_gradient(log, grad) for log, grad in zip(leaf_logs, grad_leaf)]
+        )
+
+    x0 = np.ravel([scipy.linalg.logm(mat) for mat in initial_leaf_tensors])
+    result = scipy.optimize.minimize(fun, x0, method=method, jac=jac, options=options)
+    leaf_logs = np.reshape(result.x, (n_tensors, n_modes, n_modes))
+    leaf_tensors = np.array([np.real(_expm_antihermitian(mat)) for mat in leaf_logs])
+    core_tensors = low_rank_optimal_core_tensors(two_body_tensor, leaf_tensors)
+
+    return leaf_tensors, core_tensors
+
+
+def _expm_antihermitian(mat: np.ndarray) -> np.ndarray:
+    eigs, vecs = np.linalg.eigh(-1j * mat)
+    return vecs @ np.diag(np.exp(1j * eigs)) @ vecs.T.conj()
+
+
+def _expm_antihermitian_gradient(mat: np.ndarray, grad_factor: np.ndarray) -> np.ndarray:
+    eigs, vecs = np.linalg.eigh(-1j * mat)
+    dk, dl = np.meshgrid(eigs, eigs, indexing="ij")
+    with np.errstate(divide="ignore", invalid="ignore"):
+        M = -1j * (np.exp(1j * dk) - np.exp(1j * dl)) / (dk - dl)
+    M[dk == dl] = np.exp(1j * dk[dk == dl])
+    D1 = vecs.conj() @ (vecs.T @ grad_factor @ vecs.conj() * M) @ vecs.T
+    return np.real(D1 - D1.T)
