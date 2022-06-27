@@ -18,7 +18,6 @@ from test import QiskitNatureTestCase
 from test.random import random_two_body_tensor
 
 import numpy as np
-from ddt import data, ddt, unpack
 from qiskit.quantum_info import random_hermitian
 
 from qiskit_nature.operators.second_quantization.fermionic_op import FermionicOp
@@ -29,7 +28,6 @@ from qiskit_nature.properties.second_quantization.electronic.integrals import (
     TwoBodyElectronicIntegrals,
 )
 from qiskit_nature.utils import (
-    givens_matrix,
     low_rank_decomposition,
     low_rank_two_body_decomposition,
     low_rank_optimal_core_tensors,

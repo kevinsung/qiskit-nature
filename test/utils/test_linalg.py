@@ -12,27 +12,13 @@
 
 """Test linear algebra utilities."""
 
-import itertools
-from qiskit_nature.hdf5 import load_from_hdf5
 from test import QiskitNatureTestCase
-from test.random import random_two_body_tensor
 
 import numpy as np
 from ddt import data, ddt, unpack
-from qiskit.quantum_info import random_hermitian
 
-from qiskit_nature.operators.second_quantization.fermionic_op import FermionicOp
-from qiskit_nature.properties.second_quantization.electronic import ElectronicEnergy
-from qiskit_nature.properties.second_quantization.electronic.bases import ElectronicBasis
-from qiskit_nature.properties.second_quantization.electronic.integrals import (
-    OneBodyElectronicIntegrals,
-    TwoBodyElectronicIntegrals,
-)
 from qiskit_nature.utils import (
     givens_matrix,
-    low_rank_decomposition,
-    low_rank_two_body_decomposition,
-    low_rank_optimal_core_tensors,
 )
 
 

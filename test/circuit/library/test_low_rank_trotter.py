@@ -16,23 +16,15 @@ from test import QiskitNatureTestCase
 
 import numpy as np
 import scipy.sparse.linalg
-from ddt import data, ddt, unpack
-from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.quantum_info import (
-    Operator,
-    Statevector,
     random_hermitian,
     random_statevector,
-    random_unitary,
     state_fidelity,
 )
 
-from qiskit_nature.circuit.library import BogoliubovTransform
 from qiskit_nature.circuit.library.low_rank_trotter import SimulateTrotterLowRank
-from qiskit_nature.converters.second_quantization import QubitConverter
 from qiskit_nature.hdf5 import load_from_hdf5
-from qiskit_nature.mappers.second_quantization import BravyiKitaevMapper, JordanWignerMapper
-from qiskit_nature.operators.second_quantization.quadratic_hamiltonian import QuadraticHamiltonian
+from qiskit_nature.mappers.second_quantization import JordanWignerMapper
 from qiskit_nature.properties.second_quantization.electronic import ElectronicEnergy
 from qiskit_nature.properties.second_quantization.electronic.bases import ElectronicBasis
 from qiskit_nature.properties.second_quantization.electronic.integrals import (

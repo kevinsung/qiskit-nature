@@ -13,14 +13,10 @@
 """Linear algebra utilities."""
 
 from __future__ import annotations
-import itertools
 
-from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple, Union
+from typing import Optional
 
 import numpy as np
-from qiskit import QuantumRegister
-from qiskit.circuit import Gate, Qubit
-from qiskit.circuit.library import XGate, XXPlusYYGate
 
 
 def low_rank_decomposition(

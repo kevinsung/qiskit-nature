@@ -13,9 +13,8 @@
 """Linear algebra utilities."""
 
 from __future__ import annotations
-import itertools
 
-from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple, Union
+from typing import List, Sequence, TYPE_CHECKING, Tuple, Union
 
 import numpy as np
 from qiskit import QuantumRegister
