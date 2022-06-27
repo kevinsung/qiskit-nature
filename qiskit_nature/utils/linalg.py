@@ -185,6 +185,7 @@ def _swap_columns(matrix: np.ndarray, i: int, j: int) -> None:
 def low_rank_decomposition(
     one_body_tensor: np.ndarray,
     two_body_tensor: np.ndarray,
+    *,
     final_rank: Optional[int] = None,
     spin_basis: bool = False,
     validate: bool = True,
@@ -243,6 +244,7 @@ def low_rank_decomposition(
 # TODO add support for complex orbitals
 def low_rank_two_body_decomposition(
     two_body_tensor: np.ndarray,
+    *,
     final_rank: Optional[int] = None,
     validate: bool = True,
     atol: float = 1e-8,
