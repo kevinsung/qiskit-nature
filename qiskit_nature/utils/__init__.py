@@ -33,6 +33,9 @@ Linear algebra utilities
 from .linalg import (
     apply_matrix_to_slices,
     givens_matrix,
+)
+
+from .low_rank import (
     low_rank_decomposition,
     low_rank_optimal_core_tensors,
     low_rank_two_body_decomposition,
