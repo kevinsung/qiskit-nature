@@ -127,6 +127,40 @@ class TestLowRank(QiskitNatureTestCase):
 
         self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
 
+    def test_low_rank_decomposition_equation(self):
+        """Test low rank decomposition equation."""
+        # TODO would test higher number of orbitals but normal ordering is slow
+        n_orbitals = 3
+        one_body_tensor = np.array(random_hermitian(n_orbitals))
+        two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
+
+        one_body_integrals = OneBodyElectronicIntegrals(ElectronicBasis.SO, one_body_tensor)
+        two_body_integrals = TwoBodyElectronicIntegrals(ElectronicBasis.SO, 0.5 * two_body_tensor)
+        electronic_energy = ElectronicEnergy([one_body_integrals, two_body_integrals])
+        expected = electronic_energy.second_q_ops()["ElectronicEnergy"]
+
+        corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
+            one_body_tensor, two_body_tensor
+        )
+        actual = FermionicOp.zero(register_length=n_orbitals)
+        for p, q in itertools.product(range(n_orbitals), repeat=2):
+            coeff = corrected_one_body_tensor[p, q]
+            actual += FermionicOp([([("+", p), ("-", q)], coeff)])
+        for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):
+            for i, j in itertools.product(range(n_orbitals), repeat=2):
+                num1 = FermionicOp.zero(register_length=n_orbitals)
+                num2 = FermionicOp.zero(register_length=n_orbitals)
+                for p, q in itertools.product(range(n_orbitals), repeat=2):
+                    num1 += FermionicOp(
+                        [([("+", p), ("-", q)], leaf_tensor[p, i] * leaf_tensor[q, i])]
+                    )
+                    num2 += FermionicOp(
+                        [([("+", p), ("-", q)], leaf_tensor[p, j] * leaf_tensor[q, j])]
+                    )
+                actual += 0.5 * core_tensor[i, j] * num1 @ num2
+
+        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+
     def test_low_rank_decomposition_optimal_core_tensors(self):
         """Test low rank decomposition optimal core tensors."""
         n_orbitals = 5

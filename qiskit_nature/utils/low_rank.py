@@ -29,8 +29,36 @@ def low_rank_decomposition(
     spin_basis: bool = False,
     validate: bool = True,
     atol: float = 1e-8,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Low rank decomposition of a molecular Hamiltonian.
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    r"""Low rank decomposition of a molecular Hamiltonian.
+
+    The low rank decomposition acts on a Hamiltonian of the form
+
+    ..math::
+
+        H = \sum_{pq} h_{pq} a^\dagger_p a_q
+            + \frac12 \sum_{pqrs} h_{pqrs} a^\dagger_p a^\dagger_r a_s a_q
+            + \text{constant}.
+
+    The Hamiltonian is decomposed into the form
+
+    ..math::
+
+        H = \sum_{pq} \kappa_{pq} a^\dagger_p a_q + \frac12 \sum_t \sum_{ij} Z^{(t)}_{ij} n^{(t)}_i n^{t}_j
+
+    where
+
+    ..math::
+
+        n^{(t)}_i = \sum_{pq} U^{(t)}_{pi} a^\dagger_p a^\dagger_q U^{(t)}_{qi}.
+
+    Here :math:`U^(t)_{ij}` and :math:`Z^(t)_{ij}` are tensors that are output by the decomposition.
+    Each matrix :math:`U^(t)` is guaranteed to be unitary so that the :math:`n^{(t)}_i` are
+    number operators in a rotated basis.
+    The value :math:`t` is the "final rank" of the decomposition and can be chosen by the user.
+    The default behavior is to use a full rank of :math:`N^2`, which yields an exact decomposition.
+    Specifying a smaller final rank will truncate smaller terms from the decompsition, introducing
+    some error.
 
     References:
         - `arXiv:1808.02625`_
@@ -52,7 +80,7 @@ def low_rank_decomposition(
         atol: Absolute numerical tolerance for input validation.
 
     Returns:
-        The corrected one-body tensor, leaf tensors, and core tensors
+        The corrected one-body tensor, leaf tensors, core tensors, and constant term
     """
     if spin_basis:
         # tensors are specified in the spin-orbital basis, so reduce to
@@ -62,6 +90,7 @@ def low_rank_decomposition(
         two_body_tensor = two_body_tensor[
             : n_modes // 2, : n_modes // 2, : n_modes // 2, : n_modes // 2
         ]
+        # spin basis uses physicist indexing, need to convert to chemist
         two_body_tensor = np.transpose(two_body_tensor, (2, 1, 0, 3))
 
     sign = 1 if spin_basis else -1
