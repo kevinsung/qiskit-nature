@@ -147,17 +147,16 @@ class TestLowRank(QiskitNatureTestCase):
             coeff = corrected_one_body_tensor[p, q]
             actual += FermionicOp([([("+", p), ("-", q)], coeff)])
         for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):
-            for i, j in itertools.product(range(n_orbitals), repeat=2):
-                num1 = FermionicOp.zero(register_length=n_orbitals)
-                num2 = FermionicOp.zero(register_length=n_orbitals)
+            num_ops = []
+            for i in range(n_orbitals):
+                num_op = FermionicOp.zero(register_length=n_orbitals)
                 for p, q in itertools.product(range(n_orbitals), repeat=2):
-                    num1 += FermionicOp(
-                        [([("+", p), ("-", q)], leaf_tensor[p, i] * leaf_tensor[q, i])]
+                    num_op += FermionicOp(
+                        [([("+", p), ("-", q)], leaf_tensor[p, i] * leaf_tensor[q, i].conj())]
                     )
-                    num2 += FermionicOp(
-                        [([("+", p), ("-", q)], leaf_tensor[p, j] * leaf_tensor[q, j])]
-                    )
-                actual += 0.5 * core_tensor[i, j] * num1 @ num2
+                num_ops.append(num_op)
+            for i, j in itertools.product(range(n_orbitals), repeat=2):
+                actual += 0.5 * core_tensor[i, j] * num_ops[i] @ num_ops[j]
 
         self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
 
