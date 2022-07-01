@@ -121,11 +121,76 @@ class AsymmetricLowRankTrotterStepJW:
             two_body_tensor: The two-body tensor of the Hamiltonian.
             time: Simulation time.
         """
+        self.spin_basis = spin_basis
         self.one_body_tensor, self.leaf_tensors, self.core_tensors = low_rank_decomposition(
             one_body_tensor, two_body_tensor, final_rank=final_rank, spin_basis=spin_basis
         )
+        if spin_basis:
+            # tensors are specified in the spin-orbital basis, so reduce to
+            # spatial orbital basis assuming a spin-symmetric interaction
+            n_modes, _ = self.one_body_tensor.shape
+            n_modes //= 2
+            self.one_body_tensor = self.one_body_tensor[:n_modes, :n_modes]
+            self.leaf_tensors = self.leaf_tensors[:, :n_modes, :n_modes]
+            self.core_tensors = self.core_tensors[:, :n_modes, :n_modes]
 
     def trotter_step(
+        self, register: QuantumRegister, time: float
+    ) -> Iterator[tuple[Instruction, Sequence[Qubit]]]:
+        if self.spin_basis:
+            yield from self._trotter_step_spin(register, time)
+        else:
+            yield from self._trotter_step_spatial(register, time)
+
+    def _trotter_step_spin(
+        self, register: QuantumRegister, time: float
+    ) -> Iterator[tuple[Instruction, Sequence[Qubit]]]:
+        n_qubits = len(register)
+        n_modes = n_qubits // 2
+
+        # compute basis change that diagonalizes one-body term
+        transformation_matrix, orbital_energies, _ = QuadraticHamiltonian(
+            self.one_body_tensor
+        ).diagonalizing_bogoliubov_transform()
+
+        # change to the basis in which the one-body term is diagonal
+        bog_circuit = BogoliubovTransform(transformation_matrix.T.conj())
+        yield bog_circuit, register[:n_modes]
+        yield bog_circuit, register[n_modes:]
+
+        # simulate the one-body terms
+        for i in range(n_modes):
+            rz_gate = RZGate(-orbital_energies[i] * time)
+            yield rz_gate, (register[i],)
+            yield rz_gate, (register[n_modes + i],)
+
+        # simulate the two-body terms
+        prior_transformation_matrix = transformation_matrix
+        for leaf_tensor, core_tensor in zip(self.leaf_tensors, self.core_tensors):
+            # change basis
+            merged_transformation_matrix = prior_transformation_matrix @ leaf_tensor.conj()
+            bog_circuit = BogoliubovTransform(merged_transformation_matrix)
+            yield bog_circuit, register[:n_modes]
+            yield bog_circuit, register[n_modes:]
+            # simulate off-diagonal two-body terms
+            for i, j in itertools.combinations(range(n_qubits), 2):
+                yield from _rot11(
+                    (register[i], register[j]), -core_tensor[i % n_modes, j % n_modes] * time
+                )
+            # simulate diagonal two-body terms
+            for i in range(n_modes):
+                rz_gate = RZGate(-0.5 * core_tensor[i, i] * time)
+                yield rz_gate, (register[i],)
+                yield rz_gate, (register[n_modes + i],)
+            # update prior basis change matrix
+            prior_transformation_matrix = leaf_tensor.T
+
+        # undo final basis change
+        bog_circuit = BogoliubovTransform(prior_transformation_matrix)
+        yield bog_circuit, register[:n_modes]
+        yield bog_circuit, register[n_modes:]
+
+    def _trotter_step_spatial(
         self, register: QuantumRegister, time: float
     ) -> Iterator[tuple[Instruction, Sequence[Qubit]]]:
         n_qubits = len(register)
@@ -149,11 +214,11 @@ class AsymmetricLowRankTrotterStepJW:
             merged_transformation_matrix = prior_transformation_matrix @ leaf_tensor.conj()
             yield BogoliubovTransform(merged_transformation_matrix), register
             # simulate off-diagonal two-body terms
-            for p, q in itertools.combinations(range(n_qubits), 2):
-                yield from _rot11((register[p], register[q]), -core_tensor[p, q] * time)
+            for i, j in itertools.combinations(range(n_qubits), 2):
+                yield from _rot11((register[i], register[j]), -core_tensor[i, j] * time)
             # simulate diagonal two-body terms
-            for p in range(n_qubits):
-                yield RZGate(-0.5 * core_tensor[p, p] * time), (register[p],)
+            for i in range(n_qubits):
+                yield RZGate(-0.5 * core_tensor[i, i] * time), (register[i],)
             # update prior basis change matrix
             prior_transformation_matrix = leaf_tensor.T
 
