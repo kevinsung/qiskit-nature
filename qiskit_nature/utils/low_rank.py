@@ -21,6 +21,10 @@ import numpy as np
 import scipy.linalg
 import scipy.optimize
 
+from qiskit_nature.properties.second_quantization.electronic.integrals import (
+    one_body_electronic_integrals,
+)
+
 
 def low_rank_decomposition(
     one_body_tensor: np.ndarray,
@@ -163,22 +167,11 @@ def low_rank_two_body_decomposition(
 def low_rank_z_representation(
     leaf_tensors: np.ndarray, core_tensors: np.ndarray
 ) -> tuple[np.ndarray, float]:
-    n_tensors, n_modes, _ = leaf_tensors.shape
-
-    one_body_correction = np.zeros((n_modes, n_modes))
-    for p, q in itertools.product(range(n_modes), repeat=2):
-        for t in range(n_tensors):
-            for i, j in itertools.product(range(n_modes), repeat=2):
-                one_body_correction[p, q] += (
-                    0.25
-                    * core_tensors[t, i, j]
-                    * (
-                        leaf_tensors[t, p, i] * leaf_tensors[t, q, i]
-                        + leaf_tensors[t, p, j] * leaf_tensors[t, q, j]
-                    )
-                )
-    constant_correction = -0.125 * np.sum(core_tensors)
-
+    one_body_correction = 0.25 * (
+        np.einsum("tij,tpi,tqi->pq", core_tensors, leaf_tensors, leaf_tensors.conj())
+        + np.einsum("tij,tpj,tqj->pq", core_tensors, leaf_tensors, leaf_tensors.conj())
+    )
+    constant_correction = 0.125 * (np.einsum("ijj->", core_tensors) - np.sum(core_tensors))
     return one_body_correction, constant_correction
 
 

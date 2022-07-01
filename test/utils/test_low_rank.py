@@ -159,10 +159,11 @@ class TestLowRank(QiskitNatureTestCase):
                         [([("+", p), ("-", q)], leaf_tensor[p, i] * leaf_tensor[q, i].conj())]
                     )
                 num_ops.append(num_op)
-            for i, j in itertools.product(range(n_orbitals), repeat=2):
+            for i, j in itertools.combinations(range(n_orbitals), 2):
                 z1 = FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[i]
                 z2 = FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[j]
                 actual += 0.125 * (core_tensor[i, j]) * z1 @ z2
+                actual += 0.125 * (core_tensor[j, i]) * z1 @ z2
 
         self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
 
