@@ -27,7 +27,7 @@ from qiskit_nature.circuit.library import BogoliubovTransform
 from qiskit_nature.converters.second_quantization import QubitConverter
 from qiskit_nature.mappers.second_quantization import JordanWignerMapper
 from qiskit_nature.operators.second_quantization import QuadraticHamiltonian
-from qiskit_nature.utils import low_rank_decomposition
+from qiskit_nature.utils import low_rank_decomposition, low_rank_z_representation
 
 
 class SimulateTrotterLowRank(QuantumCircuit):
@@ -122,17 +122,24 @@ class AsymmetricLowRankTrotterStepJW:
             time: Simulation time.
         """
         self.spin_basis = spin_basis
-        self.one_body_tensor, self.leaf_tensors, self.core_tensors = low_rank_decomposition(
+        one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
             one_body_tensor, two_body_tensor, final_rank=final_rank, spin_basis=spin_basis
         )
         if spin_basis:
             # tensors are specified in the spin-orbital basis, so reduce to
             # spatial orbital basis assuming a spin-symmetric interaction
-            n_modes, _ = self.one_body_tensor.shape
+            n_modes, _ = one_body_tensor.shape
             n_modes //= 2
-            self.one_body_tensor = self.one_body_tensor[:n_modes, :n_modes]
-            self.leaf_tensors = self.leaf_tensors[:, :n_modes, :n_modes]
-            self.core_tensors = self.core_tensors[:, :n_modes, :n_modes]
+            one_body_tensor = one_body_tensor[:n_modes, :n_modes]
+            leaf_tensors = leaf_tensors[:, :n_modes, :n_modes]
+            core_tensors = core_tensors[:, :n_modes, :n_modes]
+        one_body_correction, constant_correction = low_rank_z_representation(
+            leaf_tensors, core_tensors
+        )
+        self.one_body_tensor = one_body_tensor + one_body_correction
+        self.leaf_tensors = leaf_tensors
+        self.core_tensors = core_tensors
+        self.constant = constant_correction
 
     def trotter_step(
         self, register: QuantumRegister, time: float
@@ -213,12 +220,9 @@ class AsymmetricLowRankTrotterStepJW:
             # change basis
             merged_transformation_matrix = prior_transformation_matrix @ leaf_tensor.conj()
             yield BogoliubovTransform(merged_transformation_matrix), register
-            # simulate off-diagonal two-body terms
+            # simulate two-body terms
             for i, j in itertools.combinations(range(n_qubits), 2):
-                yield from _rot11((register[i], register[j]), -core_tensor[i, j] * time)
-            # simulate diagonal two-body terms
-            for i in range(n_qubits):
-                yield RZGate(-0.5 * core_tensor[i, i] * time), (register[i],)
+                yield RZZGate(0.25 * core_tensor[i, j] * time), (register[i], register[j])
             # update prior basis change matrix
             prior_transformation_matrix = leaf_tensor.T
 

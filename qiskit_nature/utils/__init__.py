@@ -28,6 +28,7 @@ Linear algebra utilities
    low_rank_decomposition
    low_rank_optimal_core_tensors
    low_rank_two_body_decomposition
+   low_rank_z_representation
 """
 
 from .linalg import (
@@ -39,6 +40,7 @@ from .low_rank import (
     low_rank_decomposition,
     low_rank_optimal_core_tensors,
     low_rank_two_body_decomposition,
+    low_rank_z_representation,
 )
 
 __all__ = [
@@ -47,4 +49,5 @@ __all__ = [
     "low_rank_decomposition",
     "low_rank_optimal_core_tensors",
     "low_rank_two_body_decomposition",
+    "low_rank_z_representation",
 ]

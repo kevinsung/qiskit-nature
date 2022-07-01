@@ -13,13 +13,15 @@
 """Test low rank utilities."""
 
 import itertools
-from qiskit_nature.hdf5 import load_from_hdf5
+from qiskit_nature.utils.low_rank import low_rank_z_representation
 from test import QiskitNatureTestCase
 from test.random import random_two_body_tensor
 
 import numpy as np
-from qiskit.quantum_info import random_hermitian
+from qiskit.quantum_info import SparsePauliOp, random_hermitian
 
+from qiskit_nature.hdf5 import load_from_hdf5
+from qiskit_nature.mappers.second_quantization import JordanWignerMapper
 from qiskit_nature.operators.second_quantization.fermionic_op import FermionicOp
 from qiskit_nature.properties.second_quantization.electronic import ElectronicEnergy
 from qiskit_nature.properties.second_quantization.electronic.bases import ElectronicBasis
@@ -29,8 +31,8 @@ from qiskit_nature.properties.second_quantization.electronic.integrals import (
 )
 from qiskit_nature.utils import (
     low_rank_decomposition,
-    low_rank_two_body_decomposition,
     low_rank_optimal_core_tensors,
+    low_rank_two_body_decomposition,
 )
 
 
@@ -157,6 +159,43 @@ class TestLowRank(QiskitNatureTestCase):
                 num_ops.append(num_op)
             for i, j in itertools.product(range(n_orbitals), repeat=2):
                 actual += 0.5 * core_tensor[i, j] * num_ops[i] @ num_ops[j]
+
+        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+
+    def test_low_rank_decomposition_z_representation(self):
+        """Test low rank decomposition equation "Z" representation."""
+        # TODO would test higher number of orbitals but normal ordering is slow
+        n_orbitals = 3
+        one_body_tensor = np.array(random_hermitian(n_orbitals))
+        two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
+
+        one_body_integrals = OneBodyElectronicIntegrals(ElectronicBasis.SO, one_body_tensor)
+        two_body_integrals = TwoBodyElectronicIntegrals(ElectronicBasis.SO, 0.5 * two_body_tensor)
+        electronic_energy = ElectronicEnergy([one_body_integrals, two_body_integrals])
+        expected = electronic_energy.second_q_ops()["ElectronicEnergy"]
+
+        corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
+            one_body_tensor, two_body_tensor
+        )
+        one_body_correction, constant = low_rank_z_representation(leaf_tensors, core_tensors)
+        corrected_one_body_tensor += one_body_correction
+        actual = constant * FermionicOp.one(register_length=n_orbitals)
+        for p, q in itertools.product(range(n_orbitals), repeat=2):
+            coeff = corrected_one_body_tensor[p, q]
+            actual += FermionicOp([([("+", p), ("-", q)], coeff)])
+        for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):
+            num_ops = []
+            for i in range(n_orbitals):
+                num_op = FermionicOp.zero(register_length=n_orbitals)
+                for p, q in itertools.product(range(n_orbitals), repeat=2):
+                    num_op += FermionicOp(
+                        [([("+", p), ("-", q)], leaf_tensor[p, i] * leaf_tensor[q, i].conj())]
+                    )
+                num_ops.append(num_op)
+            for i, j in itertools.product(range(n_orbitals), repeat=2):
+                z1 = FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[i]
+                z2 = FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[j]
+                actual += 0.125 * (core_tensor[i, j]) * z1 @ z2
 
         self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
 
