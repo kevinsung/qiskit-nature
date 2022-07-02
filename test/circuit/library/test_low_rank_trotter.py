@@ -103,12 +103,14 @@ class TestAsymmetricLowRankTrotterStep(QiskitNatureTestCase):
         fidelity = state_fidelity(final_state, exact_state)
         self.assertGreater(fidelity, 0.999)
 
-    def test_asymmetric_low_rank_trotter_step_lih(self):
-        """Test asymmetric low rank Trotter step with LiH."""
+    def test_asymmetric_low_rank_trotter_step_beh(self):
+        """Test asymmetric low rank Trotter step with BeH."""
         time = 1.0
 
         # load Hamiltonian
-        result = load_from_hdf5("test/transformers/second_quantization/electronic/LiH_sto3g.hdf5")
+        result = load_from_hdf5(
+            "test/transformers/second_quantization/electronic/BeH_sto3g_reduced.hdf5"
+        )
         energy = result.get_property("ElectronicEnergy")
         one_body_tensor = energy.get_electronic_integral(ElectronicBasis.MO, 1).to_spin()
         two_body_tensor = 2 * energy.get_electronic_integral(ElectronicBasis.MO, 2).to_spin()
@@ -129,7 +131,7 @@ class TestAsymmetricLowRankTrotterStep(QiskitNatureTestCase):
 
         # simulate Trotter evolution
         circuit = SimulateTrotterLowRank(
-            one_body_tensor, two_body_tensor, time, n_steps=1, spin_basis=True
+            one_body_tensor, two_body_tensor, time, n_steps=1, final_rank=2, spin_basis=True
         )
         final_state = initial_state.evolve(circuit)
         fidelity = state_fidelity(final_state, exact_state)

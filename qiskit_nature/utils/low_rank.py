@@ -13,17 +13,13 @@
 """Linear algebra utilities."""
 
 from __future__ import annotations
-import itertools
 
+import itertools
 from typing import Optional
 
 import numpy as np
 import scipy.linalg
 import scipy.optimize
-
-from qiskit_nature.properties.second_quantization.electronic.integrals import (
-    one_body_electronic_integrals,
-)
 
 
 def low_rank_decomposition(
@@ -141,8 +137,9 @@ def low_rank_two_body_decomposition(
         atol: Absolute numerical tolerance for input validation.
     """
     n_modes, _, _, _ = two_body_tensor.shape
+    full_rank = n_modes**2
     if final_rank is None:
-        final_rank = n_modes**2
+        final_rank = full_rank
     reshaped_tensor = np.reshape(two_body_tensor, (n_modes**2, n_modes**2))
 
     if validate:
@@ -152,12 +149,13 @@ def low_rank_two_body_decomposition(
             raise ValueError("Two-body tensor must be symmetric.")
 
     outer_eigs, outer_vecs = np.linalg.eigh(reshaped_tensor)
+    indices = np.argsort(np.abs(outer_eigs))[-1 : -final_rank - 1 : -1]
     leaf_tensors = []
     core_tensors = []
-    for i in range(final_rank):
-        mat = np.reshape(outer_vecs[:, -i - 1], (n_modes, n_modes))
+    for i in indices:
+        mat = np.reshape(outer_vecs[:, i], (n_modes, n_modes))
         inner_eigs, inner_vecs = np.linalg.eigh(mat)
-        core_tensor = outer_eigs[-i - 1] * np.outer(inner_eigs, inner_eigs)
+        core_tensor = outer_eigs[i] * np.outer(inner_eigs, inner_eigs)
         leaf_tensors.append(inner_vecs)
         core_tensors.append(core_tensor)
 

@@ -13,15 +13,13 @@
 """Test low rank utilities."""
 
 import itertools
-from qiskit_nature.utils.low_rank import low_rank_z_representation
 from test import QiskitNatureTestCase
 from test.random import random_two_body_tensor
 
 import numpy as np
-from qiskit.quantum_info import SparsePauliOp, random_hermitian
+from qiskit.quantum_info import random_hermitian
 
 from qiskit_nature.hdf5 import load_from_hdf5
-from qiskit_nature.mappers.second_quantization import JordanWignerMapper
 from qiskit_nature.operators.second_quantization.fermionic_op import FermionicOp
 from qiskit_nature.properties.second_quantization.electronic import ElectronicEnergy
 from qiskit_nature.properties.second_quantization.electronic.bases import ElectronicBasis
@@ -34,6 +32,7 @@ from qiskit_nature.utils import (
     low_rank_optimal_core_tensors,
     low_rank_two_body_decomposition,
 )
+from qiskit_nature.utils.low_rank import low_rank_z_representation
 
 
 class TestLowRank(QiskitNatureTestCase):
@@ -110,6 +109,41 @@ class TestLowRank(QiskitNatureTestCase):
         corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
             one_body_tensor, two_body_tensor, spin_basis=True
         )
+        actual = FermionicOp.zero(register_length=n_orbitals)
+        for p, q in itertools.product(range(n_orbitals), repeat=2):
+            coeff = corrected_one_body_tensor[p, q]
+            actual += FermionicOp([([("+", p), ("-", q)], coeff)])
+        for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):
+            num_ops = []
+            for i in range(n_orbitals):
+                num_op = FermionicOp.zero(register_length=n_orbitals)
+                for p, q in itertools.product(range(n_orbitals), repeat=2):
+                    num_op += FermionicOp(
+                        [([("+", p), ("-", q)], leaf_tensor[p, i] * leaf_tensor[q, i].conj())]
+                    )
+                num_ops.append(num_op)
+            for i, j in itertools.product(range(n_orbitals), repeat=2):
+                actual += 0.5 * core_tensor[i, j] * num_ops[i] @ num_ops[j]
+
+        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+
+    def test_low_rank_decomposition_truncation(self):
+        """Test low rank decomposition truncation."""
+        result = load_from_hdf5("test/transformers/second_quantization/electronic/H2_sto3g.hdf5")
+        energy = result.get_property("ElectronicEnergy")
+        expected = energy.second_q_ops()["ElectronicEnergy"]
+
+        one_body_tensor = energy.get_electronic_integral(ElectronicBasis.MO, 1).to_spin()
+        two_body_tensor = 2 * energy.get_electronic_integral(ElectronicBasis.MO, 2).to_spin()
+        n_orbitals, _ = one_body_tensor.shape
+
+        final_rank = 3
+        corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
+            one_body_tensor, two_body_tensor, spin_basis=True, final_rank=final_rank
+        )
+        self.assertEqual(len(leaf_tensors), final_rank)
+        self.assertEqual(len(core_tensors), final_rank)
+
         actual = FermionicOp.zero(register_length=n_orbitals)
         for p, q in itertools.product(range(n_orbitals), repeat=2):
             coeff = corrected_one_body_tensor[p, q]
