@@ -114,18 +114,17 @@ class TestLowRank(QiskitNatureTestCase):
         for p, q in itertools.product(range(n_orbitals), repeat=2):
             coeff = corrected_one_body_tensor[p, q]
             actual += FermionicOp([([("+", p), ("-", q)], coeff)])
-        for p, q, r, s in itertools.product(range(n_orbitals), repeat=4):
-            coeff = 0.0
-            for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):
-                coeff += np.einsum(
-                    "i,i,ij,j,j",
-                    leaf_tensor[p],
-                    leaf_tensor[q],
-                    core_tensor,
-                    leaf_tensor[r],
-                    leaf_tensor[s],
-                )
-            actual += FermionicOp([([("+", p), ("-", q), ("+", r), ("-", s)], 0.5 * coeff)])
+        for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):
+            num_ops = []
+            for i in range(n_orbitals):
+                num_op = FermionicOp.zero(register_length=n_orbitals)
+                for p, q in itertools.product(range(n_orbitals), repeat=2):
+                    num_op += FermionicOp(
+                        [([("+", p), ("-", q)], leaf_tensor[p, i] * leaf_tensor[q, i].conj())]
+                    )
+                num_ops.append(num_op)
+            for i, j in itertools.product(range(n_orbitals), repeat=2):
+                actual += 0.5 * core_tensor[i, j] * num_ops[i] @ num_ops[j]
 
         self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
 
@@ -144,6 +143,43 @@ class TestLowRank(QiskitNatureTestCase):
         corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
             one_body_tensor, two_body_tensor
         )
+        one_body_correction, constant = low_rank_z_representation(leaf_tensors, core_tensors)
+        corrected_one_body_tensor += one_body_correction
+        actual = constant * FermionicOp.one(register_length=n_orbitals)
+        for p, q in itertools.product(range(n_orbitals), repeat=2):
+            coeff = corrected_one_body_tensor[p, q]
+            actual += FermionicOp([([("+", p), ("-", q)], coeff)])
+        for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):
+            num_ops = []
+            for i in range(n_orbitals):
+                num_op = FermionicOp.zero(register_length=n_orbitals)
+                for p, q in itertools.product(range(n_orbitals), repeat=2):
+                    num_op += FermionicOp(
+                        [([("+", p), ("-", q)], leaf_tensor[p, i] * leaf_tensor[q, i].conj())]
+                    )
+                num_ops.append(num_op)
+            for i, j in itertools.combinations(range(n_orbitals), 2):
+                z1 = FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[i]
+                z2 = FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[j]
+                actual += 0.125 * (core_tensor[i, j]) * z1 @ z2
+                actual += 0.125 * (core_tensor[j, i]) * z1 @ z2
+
+        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+
+    def test_low_rank_decomposition_z_representation_spin(self):
+        """Test low rank decomposition equation "Z" representation with spin."""
+        result = load_from_hdf5("test/transformers/second_quantization/electronic/H2_sto3g.hdf5")
+        energy = result.get_property("ElectronicEnergy")
+        expected = energy.second_q_ops()["ElectronicEnergy"]
+
+        one_body_tensor = energy.get_electronic_integral(ElectronicBasis.MO, 1).to_spin()
+        two_body_tensor = 2 * energy.get_electronic_integral(ElectronicBasis.MO, 2).to_spin()
+        n_orbitals, _ = one_body_tensor.shape
+
+        corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
+            one_body_tensor, two_body_tensor, spin_basis=True
+        )
+
         one_body_correction, constant = low_rank_z_representation(leaf_tensors, core_tensors)
         corrected_one_body_tensor += one_body_correction
         actual = constant * FermionicOp.one(register_length=n_orbitals)
