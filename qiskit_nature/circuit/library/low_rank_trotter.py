@@ -122,21 +122,22 @@ class AsymmetricLowRankTrotterStepJW:
             time: Simulation time.
         """
         self.spin_basis = spin_basis
-        one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
+        corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
             one_body_tensor, two_body_tensor, final_rank=final_rank, spin_basis=spin_basis
         )
+        one_body_correction, constant_correction = low_rank_z_representation(
+            leaf_tensors, core_tensors
+        )
+        corrected_one_body_tensor += one_body_correction
         if spin_basis:
             # tensors are specified in the spin-orbital basis, so reduce to
             # spatial orbital basis assuming a spin-symmetric interaction
             n_modes, _ = one_body_tensor.shape
             n_modes //= 2
-            one_body_tensor = one_body_tensor[:n_modes, :n_modes]
+            corrected_one_body_tensor = corrected_one_body_tensor[:n_modes, :n_modes]
             leaf_tensors = leaf_tensors[:, :n_modes, :n_modes]
             core_tensors = core_tensors[:, :n_modes, :n_modes]
-        one_body_correction, constant_correction = low_rank_z_representation(
-            leaf_tensors, core_tensors
-        )
-        self.one_body_tensor = one_body_tensor + one_body_correction
+        self.one_body_tensor = corrected_one_body_tensor
         self.leaf_tensors = leaf_tensors
         self.core_tensors = core_tensors
         self.constant = constant_correction
@@ -179,16 +180,19 @@ class AsymmetricLowRankTrotterStepJW:
             bog_circuit = BogoliubovTransform(merged_transformation_matrix)
             yield bog_circuit, register[:n_modes]
             yield bog_circuit, register[n_modes:]
-            # simulate off-diagonal two-body terms
+            # simulate two-body terms
             for i, j in itertools.combinations(range(n_qubits), 2):
-                yield from _rot11(
-                    (register[i], register[j]), -core_tensor[i % n_modes, j % n_modes] * time
+                yield RZZGate(
+                    0.25
+                    * (
+                        core_tensor[i % n_modes, j % n_modes]
+                        + core_tensor[j % n_modes, i % n_modes]
+                    )
+                    * time
+                ), (
+                    register[i],
+                    register[j],
                 )
-            # simulate diagonal two-body terms
-            for i in range(n_modes):
-                rz_gate = RZGate(-0.5 * core_tensor[i, i] * time)
-                yield rz_gate, (register[i],)
-                yield rz_gate, (register[n_modes + i],)
             # update prior basis change matrix
             prior_transformation_matrix = leaf_tensor.T
 
@@ -222,19 +226,12 @@ class AsymmetricLowRankTrotterStepJW:
             yield BogoliubovTransform(merged_transformation_matrix), register
             # simulate two-body terms
             for i, j in itertools.combinations(range(n_qubits), 2):
-                yield RZZGate(0.25 * core_tensor[i, j] * time), (register[i], register[j])
+                yield RZZGate(0.25 * (core_tensor[i, j] + core_tensor[j, i]) * time), (
+                    register[i],
+                    register[j],
+                )
             # update prior basis change matrix
             prior_transformation_matrix = leaf_tensor.T
 
         # undo final basis change
         yield BogoliubovTransform(prior_transformation_matrix), register
-
-
-def _rot11(qubits: Sequence[Qubit], angle: float) -> Iterator[tuple[Instruction, Sequence[Qubit]]]:
-    """Phases the |11⟩ state by angle, up to global phase."""
-    # NOTE global phase is omitted
-    # TODO implement this as a gate with global phase added
-    a, b = qubits
-    yield RZGate(0.5 * angle), (a,)
-    yield RZGate(0.5 * angle), (b,)
-    yield RZZGate(-0.5 * angle), (a, b)

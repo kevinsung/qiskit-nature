@@ -40,11 +40,12 @@ class TestAsymmetricLowRankTrotterStep(QiskitNatureTestCase):
     def test_asymmetric_low_rank_trotter_step_random(self):
         """Test asymmetric low rank Trotter step."""
         time = 0.1
+        rng = np.random.default_rng()
 
         # generate Hamiltonian
         n_orbitals = 4
-        one_body_tensor = np.array(random_hermitian(n_orbitals))
-        two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
+        one_body_tensor = np.array(random_hermitian(n_orbitals, seed=rng))
+        two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True, seed=rng)
 
         one_body_integrals = OneBodyElectronicIntegrals(ElectronicBasis.SO, one_body_tensor)
         two_body_integrals = TwoBodyElectronicIntegrals(ElectronicBasis.SO, 0.5 * two_body_tensor)
@@ -53,7 +54,7 @@ class TestAsymmetricLowRankTrotterStep(QiskitNatureTestCase):
 
         # generate random initial state
         n_modes = hamiltonian.register_length
-        initial_state = random_statevector(2**n_modes)
+        initial_state = random_statevector(2**n_modes, seed=rng)
 
         # simulate exact evolution
         hamiltonian_sparse = JordanWignerMapper().map(hamiltonian).to_spmatrix()
@@ -70,34 +71,34 @@ class TestAsymmetricLowRankTrotterStep(QiskitNatureTestCase):
         fidelity = state_fidelity(final_state, exact_state)
         self.assertGreater(fidelity, 0.99)
 
-    # def test_asymmetric_low_rank_trotter_step_h2(self):
-    #     """Test asymmetric low rank Trotter step."""
-    #     time = 1.0
+    def test_asymmetric_low_rank_trotter_step_h2(self):
+        """Test asymmetric low rank Trotter step."""
+        time = 1.0
 
-    #     # load Hamiltonian
-    #     result = load_from_hdf5("test/transformers/second_quantization/electronic/H2_sto3g.hdf5")
-    #     energy = result.get_property("ElectronicEnergy")
-    #     one_body_tensor = energy.get_electronic_integral(ElectronicBasis.MO, 1).to_spin()
-    #     two_body_tensor = 2 * energy.get_electronic_integral(ElectronicBasis.MO, 2).to_spin()
-    #     hamiltonian = energy.second_q_ops()["ElectronicEnergy"]
+        # load Hamiltonian
+        result = load_from_hdf5("test/transformers/second_quantization/electronic/H2_sto3g.hdf5")
+        energy = result.get_property("ElectronicEnergy")
+        one_body_tensor = energy.get_electronic_integral(ElectronicBasis.MO, 1).to_spin()
+        two_body_tensor = 2 * energy.get_electronic_integral(ElectronicBasis.MO, 2).to_spin()
+        hamiltonian = energy.second_q_ops()["ElectronicEnergy"]
 
-    #     # generate random initial state
-    #     n_modes, _ = one_body_tensor.shape
-    #     initial_state = random_statevector(2**n_modes)
+        # generate random initial state
+        n_modes, _ = one_body_tensor.shape
+        initial_state = random_statevector(2**n_modes)
 
-    #     # simulate exact evolution
-    #     hamiltonian_sparse = JordanWignerMapper().map(hamiltonian).to_spmatrix()
-    #     exact_state = scipy.sparse.linalg.expm_multiply(
-    #         -1j * time * hamiltonian_sparse, np.array(initial_state)
-    #     )
+        # simulate exact evolution
+        hamiltonian_sparse = JordanWignerMapper().map(hamiltonian).to_spmatrix()
+        exact_state = scipy.sparse.linalg.expm_multiply(
+            -1j * time * hamiltonian_sparse, np.array(initial_state)
+        )
 
-    #     # make sure time is not too small
-    #     assert state_fidelity(exact_state, initial_state) < 0.97
+        # make sure time is not too small
+        assert state_fidelity(exact_state, initial_state) < 0.97
 
-    #     # simulate Trotter evolution
-    #     circuit = SimulateTrotterLowRank(
-    #         one_body_tensor, two_body_tensor, time, n_steps=5, spin_basis=True
-    #     )
-    #     final_state = initial_state.evolve(circuit)
-    #     fidelity = state_fidelity(final_state, exact_state)
-    #     self.assertGreater(fidelity, 0.999)
+        # simulate Trotter evolution
+        circuit = SimulateTrotterLowRank(
+            one_body_tensor, two_body_tensor, time, n_steps=5, spin_basis=True
+        )
+        final_state = initial_state.evolve(circuit)
+        fidelity = state_fidelity(final_state, exact_state)
+        self.assertGreater(fidelity, 0.999)
