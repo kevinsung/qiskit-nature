@@ -28,6 +28,9 @@ def low_rank_decomposition(
     *,
     final_rank: Optional[int] = None,
     spin_basis: bool = False,
+    compress: bool = False,
+    method: str = "L-BFGS-B",
+    options: Optional[dict] = None,
     validate: bool = True,
     atol: float = 1e-8,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
@@ -96,9 +99,14 @@ def low_rank_decomposition(
 
     sign = 1 if spin_basis else -1
     corrected_one_body_tensor = one_body_tensor + sign * 0.5 * np.einsum("prqr", two_body_tensor)
-    leaf_tensors, core_tensors = low_rank_two_body_decomposition(
-        two_body_tensor, final_rank=final_rank, validate=validate, atol=atol
-    )
+    if compress:
+        leaf_tensors, core_tensors = low_rank_compressed_two_body_decomposition(
+            two_body_tensor, final_rank=final_rank, validate=validate, atol=atol
+        )
+    else:
+        leaf_tensors, core_tensors = low_rank_two_body_decomposition(
+            two_body_tensor, final_rank=final_rank, validate=validate, atol=atol
+        )
 
     if spin_basis:
         # expand back to spin-orbital basis
@@ -222,10 +230,18 @@ def low_rank_optimal_core_tensors(
 
 
 def low_rank_compressed_two_body_decomposition(
-    two_body_tensor, initial_leaf_tensors, method="L-BFGS-B", **options
+    two_body_tensor,
+    *,
+    final_rank: Optional[int] = None,
+    method="L-BFGS-B",
+    options: Optional[dict] = None,
+    validate: bool = True,
+    atol: float = 1e-8,
 ):
-    n_modes, _, _, _ = two_body_tensor.shape
-    n_tensors, _, _ = initial_leaf_tensors.shape
+    leaf_tensors, _ = low_rank_two_body_decomposition(
+        two_body_tensor, final_rank=final_rank, validate=validate, atol=atol
+    )
+    n_tensors, n_modes, _ = leaf_tensors.shape
 
     def fun(x):
         leaf_logs = np.reshape(x, (n_tensors, n_modes, n_modes))
@@ -267,7 +283,7 @@ def low_rank_compressed_two_body_decomposition(
             [_expm_antihermitian_gradient(log, grad) for log, grad in zip(leaf_logs, grad_leaf)]
         )
 
-    x0 = np.ravel([scipy.linalg.logm(mat) for mat in initial_leaf_tensors])
+    x0 = np.ravel([np.real(scipy.linalg.logm(mat)) for mat in np.real(leaf_tensors)])
     result = scipy.optimize.minimize(fun, x0, method=method, jac=jac, options=options)
     leaf_logs = np.reshape(result.x, (n_tensors, n_modes, n_modes))
     leaf_tensors = np.array([np.real(_expm_antihermitian(mat)) for mat in leaf_logs])

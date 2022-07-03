@@ -27,41 +27,17 @@ from qiskit_nature.properties.second_quantization.electronic.integrals import (
     OneBodyElectronicIntegrals,
     TwoBodyElectronicIntegrals,
 )
-from qiskit_nature.utils import (
+from qiskit_nature.utils.low_rank import (
     low_rank_decomposition,
     low_rank_optimal_core_tensors,
+    low_rank_compressed_two_body_decomposition,
     low_rank_two_body_decomposition,
+    low_rank_z_representation,
 )
-from qiskit_nature.utils.low_rank import low_rank_z_representation
 
 
 class TestLowRank(QiskitNatureTestCase):
     """Tests for low rank decomposition utilities."""
-
-    def test_low_rank_two_body_decomposition(self):
-        """Test low rank two-body decomposition."""
-        n_orbitals = 5
-        two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
-        leaf_tensors, core_tensors = low_rank_two_body_decomposition(two_body_tensor)
-
-        two_body_integrals = TwoBodyElectronicIntegrals(ElectronicBasis.SO, 0.5 * two_body_tensor)
-        expected = two_body_integrals.to_second_q_op()
-
-        actual = FermionicOp.zero(register_length=n_orbitals)
-        for p, q, r, s in itertools.product(range(n_orbitals), repeat=4):
-            coeff = 0.0
-            for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):
-                coeff += np.einsum(
-                    "i,i,ij,j,j",
-                    leaf_tensor[p],
-                    leaf_tensor[q],
-                    core_tensor,
-                    leaf_tensor[r],
-                    leaf_tensor[s],
-                )
-            actual += FermionicOp([([("+", p), ("+", r), ("-", s), ("-", q)], 0.5 * coeff)])
-
-        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
 
     def test_low_rank_decomposition(self):
         """Test low rank decomposition."""
@@ -270,5 +246,55 @@ class TestLowRank(QiskitNatureTestCase):
                     leaf_tensor[s],
                 )
             actual += FermionicOp([([("+", p), ("-", q), ("+", r), ("-", s)], 0.5 * coeff)])
+
+        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+
+    def test_low_rank_two_body_decomposition(self):
+        """Test low rank two-body decomposition."""
+        n_orbitals = 5
+        two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
+        leaf_tensors, core_tensors = low_rank_two_body_decomposition(two_body_tensor)
+
+        two_body_integrals = TwoBodyElectronicIntegrals(ElectronicBasis.SO, 0.5 * two_body_tensor)
+        expected = two_body_integrals.to_second_q_op()
+
+        actual = FermionicOp.zero(register_length=n_orbitals)
+        for p, q, r, s in itertools.product(range(n_orbitals), repeat=4):
+            coeff = 0.0
+            for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):
+                coeff += np.einsum(
+                    "i,i,ij,j,j",
+                    leaf_tensor[p],
+                    leaf_tensor[q],
+                    core_tensor,
+                    leaf_tensor[r],
+                    leaf_tensor[s],
+                )
+            actual += FermionicOp([([("+", p), ("+", r), ("-", s), ("-", q)], 0.5 * coeff)])
+
+        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+
+    def test_low_rank_compressed_two_body_decomposition(self):
+        """Test low rank compressed two-body decomposition."""
+        n_orbitals = 5
+        two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
+        leaf_tensors, core_tensors = low_rank_compressed_two_body_decomposition(two_body_tensor)
+
+        two_body_integrals = TwoBodyElectronicIntegrals(ElectronicBasis.SO, 0.5 * two_body_tensor)
+        expected = two_body_integrals.to_second_q_op()
+
+        actual = FermionicOp.zero(register_length=n_orbitals)
+        for p, q, r, s in itertools.product(range(n_orbitals), repeat=4):
+            coeff = 0.0
+            for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):
+                coeff += np.einsum(
+                    "i,i,ij,j,j",
+                    leaf_tensor[p],
+                    leaf_tensor[q],
+                    core_tensor,
+                    leaf_tensor[r],
+                    leaf_tensor[s],
+                )
+            actual += FermionicOp([([("+", p), ("+", r), ("-", s), ("-", q)], 0.5 * coeff)])
 
         self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
