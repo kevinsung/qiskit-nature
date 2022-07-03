@@ -298,3 +298,34 @@ class TestLowRank(QiskitNatureTestCase):
             actual += FermionicOp([([("+", p), ("+", r), ("-", s), ("-", q)], 0.5 * coeff)])
 
         self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+
+    def test_low_rank_decomposition_compressed_spin(self):
+        """Test compressed low rank decomposition with spin."""
+        result = load_from_hdf5("test/transformers/second_quantization/electronic/H2_sto3g.hdf5")
+        energy = result.get_property("ElectronicEnergy")
+        expected = energy.second_q_ops()["ElectronicEnergy"]
+
+        one_body_tensor = energy.get_electronic_integral(ElectronicBasis.MO, 1).to_spin()
+        two_body_tensor = 2 * energy.get_electronic_integral(ElectronicBasis.MO, 2).to_spin()
+        n_orbitals, _ = one_body_tensor.shape
+
+        corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
+            one_body_tensor, two_body_tensor, final_rank=2, spin_basis=True, compress=True
+        )
+        actual = FermionicOp.zero(register_length=n_orbitals)
+        for p, q in itertools.product(range(n_orbitals), repeat=2):
+            coeff = corrected_one_body_tensor[p, q]
+            actual += FermionicOp([([("+", p), ("-", q)], coeff)])
+        for leaf_tensor, core_tensor in zip(leaf_tensors, core_tensors):
+            num_ops = []
+            for i in range(n_orbitals):
+                num_op = FermionicOp.zero(register_length=n_orbitals)
+                for p, q in itertools.product(range(n_orbitals), repeat=2):
+                    num_op += FermionicOp(
+                        [([("+", p), ("-", q)], leaf_tensor[p, i] * leaf_tensor[q, i].conj())]
+                    )
+                num_ops.append(num_op)
+            for i, j in itertools.product(range(n_orbitals), repeat=2):
+                actual += 0.5 * core_tensor[i, j] * num_ops[i] @ num_ops[j]
+
+        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
