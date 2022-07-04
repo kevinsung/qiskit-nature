@@ -101,7 +101,12 @@ def low_rank_decomposition(
     corrected_one_body_tensor = one_body_tensor + sign * 0.5 * np.einsum("prqr", two_body_tensor)
     if compress:
         leaf_tensors, core_tensors = low_rank_compressed_two_body_decomposition(
-            two_body_tensor, final_rank=final_rank, validate=validate, atol=atol
+            two_body_tensor,
+            final_rank=final_rank,
+            method=method,
+            options=options,
+            validate=validate,
+            atol=atol,
         )
     else:
         leaf_tensors, core_tensors = low_rank_two_body_decomposition(
@@ -244,9 +249,7 @@ def low_rank_compressed_two_body_decomposition(
     n_tensors, n_modes, _ = leaf_tensors.shape
 
     def fun(x):
-        leaf_logs = np.reshape(x, (n_tensors, n_modes, n_modes))
-        # TODO these are not antisymmetric, does it matter?
-        leaf_tensors = np.array([np.real(_expm_antihermitian(mat)) for mat in leaf_logs])
+        leaf_tensors = _params_to_leaf_tensors(x, n_tensors, n_modes)
         core_tensors = low_rank_optimal_core_tensors(two_body_tensor, leaf_tensors)
         diff = two_body_tensor - np.einsum(
             "tpk,tqk,tkl,trl,tsl->pqrs",
@@ -259,9 +262,8 @@ def low_rank_compressed_two_body_decomposition(
         return 0.5 * np.sum(diff**2)
 
     def jac(x):
-        leaf_logs = np.reshape(x, (n_tensors, n_modes, n_modes))
-        # TODO these are not antisymmetric, does it matter?
-        leaf_tensors = np.array([np.real(_expm_antihermitian(mat)) for mat in leaf_logs])
+        leaf_logs = _params_to_leaf_logs(x, n_tensors, n_modes)
+        leaf_tensors = _params_to_leaf_tensors(x, n_tensors, n_modes)
         core_tensors = low_rank_optimal_core_tensors(two_body_tensor, leaf_tensors)
         diff = two_body_tensor - np.einsum(
             "tpk,tqk,tkl,trl,tsl->pqrs",
@@ -280,28 +282,51 @@ def low_rank_compressed_two_body_decomposition(
             leaf_tensors,
         )
         return np.ravel(
-            [_expm_antihermitian_gradient(log, grad) for log, grad in zip(leaf_logs, grad_leaf)]
+            [_expm_antisymmetric_gradient(log, grad) for log, grad in zip(leaf_logs, grad_leaf)]
         )
 
-    x0 = np.ravel([np.real(scipy.linalg.logm(mat)) for mat in np.real(leaf_tensors)])
+    x0 = _leaf_tensors_to_params(leaf_tensors)
     result = scipy.optimize.minimize(fun, x0, method=method, jac=jac, options=options)
-    leaf_logs = np.reshape(result.x, (n_tensors, n_modes, n_modes))
-    leaf_tensors = np.array([np.real(_expm_antihermitian(mat)) for mat in leaf_logs])
+    leaf_tensors = _params_to_leaf_tensors(result.x, n_tensors, n_modes)
     core_tensors = low_rank_optimal_core_tensors(two_body_tensor, leaf_tensors)
 
     return leaf_tensors, core_tensors
 
 
-def _expm_antihermitian(mat: np.ndarray) -> np.ndarray:
+def _leaf_tensors_to_params(leaf_tensors: np.ndarray):
+    _, n_modes, _ = leaf_tensors.shape
+    leaf_logs = [np.real(scipy.linalg.logm(mat)) for mat in np.real(leaf_tensors)]
+    triu_indices = np.triu_indices(n_modes, k=1)
+    return np.ravel([leaf_log[triu_indices] for leaf_log in leaf_logs])
+
+
+def _params_to_leaf_logs(params: np.ndarray, n_tensors: int, n_modes: int):
+    leaf_logs = np.zeros((n_tensors, n_modes, n_modes))
+    triu_indices = np.triu_indices(n_modes, k=1)
+    param_length = len(triu_indices[0])
+    for i in range(n_tensors):
+        leaf_logs[i][triu_indices] = params[i * param_length : (i + 1) * param_length]
+        leaf_logs[i] -= leaf_logs[i].T
+    return leaf_logs
+
+
+def _params_to_leaf_tensors(params: np.ndarray, n_tensors: int, n_modes: int):
+    leaf_logs = _params_to_leaf_logs(params, n_tensors, n_modes)
+    return np.array([_expm_antisymmetric(mat) for mat in leaf_logs])
+
+
+def _expm_antisymmetric(mat: np.ndarray) -> np.ndarray:
     eigs, vecs = np.linalg.eigh(-1j * mat)
-    return vecs @ np.diag(np.exp(1j * eigs)) @ vecs.T.conj()
+    return np.real(vecs @ np.diag(np.exp(1j * eigs)) @ vecs.T.conj())
 
 
-def _expm_antihermitian_gradient(mat: np.ndarray, grad_factor: np.ndarray) -> np.ndarray:
+def _expm_antisymmetric_gradient(mat: np.ndarray, grad_factor: np.ndarray) -> np.ndarray:
+    n_modes, _ = mat.shape
     eigs, vecs = np.linalg.eigh(-1j * mat)
     dk, dl = np.meshgrid(eigs, eigs, indexing="ij")
     with np.errstate(divide="ignore", invalid="ignore"):
         M = -1j * (np.exp(1j * dk) - np.exp(1j * dl)) / (dk - dl)
     M[dk == dl] = np.exp(1j * dk[dk == dl])
     D1 = vecs.conj() @ (vecs.T @ grad_factor @ vecs.conj() * M) @ vecs.T
-    return np.real(D1 - D1.T)
+    triu_indices = np.triu_indices(n_modes, k=1)
+    return np.real((D1 - D1.T)[triu_indices])

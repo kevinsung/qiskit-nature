@@ -276,7 +276,7 @@ class TestLowRank(QiskitNatureTestCase):
 
     def test_low_rank_compressed_two_body_decomposition(self):
         """Test low rank compressed two-body decomposition."""
-        n_orbitals = 5
+        n_orbitals = 4
         two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
         leaf_tensors, core_tensors = low_rank_compressed_two_body_decomposition(two_body_tensor)
 
@@ -301,7 +301,9 @@ class TestLowRank(QiskitNatureTestCase):
 
     def test_low_rank_decomposition_compressed_spin(self):
         """Test compressed low rank decomposition with spin."""
-        result = load_from_hdf5("test/transformers/second_quantization/electronic/H2_sto3g.hdf5")
+        result = load_from_hdf5(
+            "test/transformers/second_quantization/electronic/BeH_sto3g_reduced.hdf5"
+        )
         energy = result.get_property("ElectronicEnergy")
         expected = energy.second_q_ops()["ElectronicEnergy"]
 
@@ -310,7 +312,7 @@ class TestLowRank(QiskitNatureTestCase):
         n_orbitals, _ = one_body_tensor.shape
 
         corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
-            one_body_tensor, two_body_tensor, final_rank=2, spin_basis=True, compress=True
+            one_body_tensor, two_body_tensor, final_rank=4, spin_basis=True, compress=True
         )
         actual = FermionicOp.zero(register_length=n_orbitals)
         for p, q in itertools.product(range(n_orbitals), repeat=2):
@@ -328,4 +330,5 @@ class TestLowRank(QiskitNatureTestCase):
             for i, j in itertools.product(range(n_orbitals), repeat=2):
                 actual += 0.5 * core_tensor[i, j] * num_ops[i] @ num_ops[j]
 
-        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+        diff = (actual - expected).normal_ordered().simplify()
+        self.assertLess(diff.induced_norm(), 1e-3)
