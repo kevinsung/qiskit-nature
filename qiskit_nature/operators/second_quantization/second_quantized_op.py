@@ -71,9 +71,9 @@ class SecondQuantizedOp(StarAlgebraMixin, TolerancesMixin, ABC):
         Returns:
             True if the operator is hermitian up to numerical tolerance, False otherwise.
         """
-        return self.approx_eq(self.adjoint(), atol=atol)
+        return self.equiv(self.adjoint(), atol=atol)
 
-    def approx_eq(self, other: Any, atol: Optional[float] = None) -> bool:
+    def equiv(self, other: Any, atol: Optional[float] = None) -> bool:
         """Checks whether this operator is approximately equal to another operator.
 
         Args:
