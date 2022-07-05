@@ -70,7 +70,7 @@ class TestLowRank(QiskitNatureTestCase):
             for i, j in itertools.product(range(n_orbitals), repeat=2):
                 actual += 0.5 * core_tensor[i, j] * num_ops[i] @ num_ops[j]
 
-        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+        self.assertTrue(actual.normal_ordered().equiv(expected.normal_ordered(), atol=1e-8))
 
     def test_low_rank_decomposition_spin(self):
         """Test low rank decomposition with spin."""
@@ -101,7 +101,7 @@ class TestLowRank(QiskitNatureTestCase):
             for i, j in itertools.product(range(n_orbitals), repeat=2):
                 actual += 0.5 * core_tensor[i, j] * num_ops[i] @ num_ops[j]
 
-        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+        self.assertTrue(actual.normal_ordered().equiv(expected.normal_ordered(), atol=1e-8))
 
     def test_low_rank_decomposition_truncation(self):
         """Test low rank decomposition truncation."""
@@ -136,7 +136,7 @@ class TestLowRank(QiskitNatureTestCase):
             for i, j in itertools.product(range(n_orbitals), repeat=2):
                 actual += 0.5 * core_tensor[i, j] * num_ops[i] @ num_ops[j]
 
-        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+        self.assertTrue(actual.normal_ordered().equiv(expected.normal_ordered(), atol=1e-8))
 
     def test_low_rank_decomposition_z_representation(self):
         """Test low rank decomposition equation "Z" representation."""
@@ -174,7 +174,7 @@ class TestLowRank(QiskitNatureTestCase):
                 actual += 0.125 * (core_tensor[i, j]) * z1 @ z2
                 actual += 0.125 * (core_tensor[j, i]) * z1 @ z2
 
-        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+        self.assertTrue(actual.normal_ordered().equiv(expected.normal_ordered(), atol=1e-8))
 
     def test_low_rank_decomposition_z_representation_spin(self):
         """Test low rank decomposition equation "Z" representation with spin."""
@@ -211,7 +211,7 @@ class TestLowRank(QiskitNatureTestCase):
                 actual += 0.125 * (core_tensor[i, j]) * z1 @ z2
                 actual += 0.125 * (core_tensor[j, i]) * z1 @ z2
 
-        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+        self.assertTrue(actual.normal_ordered().equiv(expected.normal_ordered(), atol=1e-8))
 
     def test_low_rank_decomposition_optimal_core_tensors(self):
         """Test low rank decomposition optimal core tensors."""
@@ -247,7 +247,7 @@ class TestLowRank(QiskitNatureTestCase):
                 )
             actual += FermionicOp([([("+", p), ("-", q), ("+", r), ("-", s)], 0.5 * coeff)])
 
-        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+        self.assertTrue(actual.normal_ordered().equiv(expected.normal_ordered(), atol=1e-8))
 
     def test_low_rank_two_body_decomposition(self):
         """Test low rank two-body decomposition."""
@@ -272,7 +272,7 @@ class TestLowRank(QiskitNatureTestCase):
                 )
             actual += FermionicOp([([("+", p), ("+", r), ("-", s), ("-", q)], 0.5 * coeff)])
 
-        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+        self.assertTrue(actual.normal_ordered().equiv(expected.normal_ordered(), atol=1e-8))
 
     def test_low_rank_compressed_two_body_decomposition(self):
         """Test low rank compressed two-body decomposition."""
@@ -297,7 +297,7 @@ class TestLowRank(QiskitNatureTestCase):
                 )
             actual += FermionicOp([([("+", p), ("+", r), ("-", s), ("-", q)], 0.5 * coeff)])
 
-        self.assertTrue(actual.normal_ordered().approx_eq(expected.normal_ordered(), atol=1e-8))
+        self.assertTrue(actual.normal_ordered().equiv(expected.normal_ordered(), atol=1e-8))
 
     def test_low_rank_decomposition_compressed_spin(self):
         """Test compressed low rank decomposition with spin."""
