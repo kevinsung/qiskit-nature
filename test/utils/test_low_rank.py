@@ -279,7 +279,7 @@ class TestLowRank(QiskitNatureTestCase):
         n_orbitals, _ = one_body_tensor.shape
 
         corrected_one_body_tensor, leaf_tensors, core_tensors = low_rank_decomposition(
-            one_body_tensor, two_body_tensor, final_rank=4, spin_basis=True, compress=True
+            one_body_tensor, two_body_tensor, final_rank=4, spin_basis=True, optimize=True
         )
         actual = FermionicOp.zero(register_length=n_orbitals)
         for p, q in itertools.product(range(n_orbitals), repeat=2):

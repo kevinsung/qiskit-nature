@@ -28,7 +28,7 @@ def low_rank_decomposition(
     *,
     final_rank: Optional[int] = None,
     spin_basis: bool = False,
-    compress: bool = False,
+    optimize: bool = False,
     method: str = "L-BFGS-B",
     options: Optional[dict] = None,
     validate: bool = True,
@@ -99,7 +99,7 @@ def low_rank_decomposition(
 
     sign = 1 if spin_basis else -1
     corrected_one_body_tensor = one_body_tensor + sign * 0.5 * np.einsum("prqr", two_body_tensor)
-    if compress:
+    if optimize:
         leaf_tensors, core_tensors = low_rank_compressed_two_body_decomposition(
             two_body_tensor,
             final_rank=final_rank,
