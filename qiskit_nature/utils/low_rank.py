@@ -262,7 +262,6 @@ def low_rank_compressed_two_body_decomposition(
         return 0.5 * np.sum(diff**2)
 
     def jac(x):
-        leaf_logs = _params_to_leaf_logs(x, n_tensors, n_modes)
         leaf_tensors = _params_to_leaf_tensors(x, n_tensors, n_modes)
         core_tensors = low_rank_optimal_core_tensors(two_body_tensor, leaf_tensors)
         diff = two_body_tensor - np.einsum(
@@ -281,9 +280,8 @@ def low_rank_compressed_two_body_decomposition(
             leaf_tensors,
             leaf_tensors,
         )
-        return np.ravel(
-            [_expm_antisymmetric_gradient(log, grad) for log, grad in zip(leaf_logs, grad_leaf)]
-        )
+        leaf_logs = _params_to_leaf_logs(x, n_tensors, n_modes)
+        return np.ravel([_gradient(log, grad) for log, grad in zip(leaf_logs, grad_leaf)])
 
     x0 = _leaf_tensors_to_params(leaf_tensors)
     result = scipy.optimize.minimize(fun, x0, method=method, jac=jac, options=options)
@@ -320,13 +318,14 @@ def _expm_antisymmetric(mat: np.ndarray) -> np.ndarray:
     return np.real(vecs @ np.diag(np.exp(1j * eigs)) @ vecs.T.conj())
 
 
-def _expm_antisymmetric_gradient(mat: np.ndarray, grad_factor: np.ndarray) -> np.ndarray:
-    n_modes, _ = mat.shape
+def _gradient(mat: np.ndarray, grad_factor: np.ndarray) -> np.ndarray:
     eigs, vecs = np.linalg.eigh(-1j * mat)
-    dk, dl = np.meshgrid(eigs, eigs, indexing="ij")
+    eig_i, eig_j = np.meshgrid(eigs, eigs, indexing="ij")
     with np.errstate(divide="ignore", invalid="ignore"):
-        M = -1j * (np.exp(1j * dk) - np.exp(1j * dl)) / (dk - dl)
-    M[dk == dl] = np.exp(1j * dk[dk == dl])
-    D1 = vecs.conj() @ (vecs.T @ grad_factor @ vecs.conj() * M) @ vecs.T
+        coeffs = -1j * (np.exp(1j * eig_i) - np.exp(1j * eig_j)) / (eig_i - eig_j)
+    coeffs[eig_i == eig_j] = np.exp(1j * eig_i[eig_i == eig_j])
+    grad = vecs.conj() @ (vecs.T @ grad_factor @ vecs.conj() * coeffs) @ vecs.T
+    grad -= grad.T
+    n_modes, _ = mat.shape
     triu_indices = np.triu_indices(n_modes, k=1)
-    return np.real((D1 - D1.T)[triu_indices])
+    return np.real(grad[triu_indices])
