@@ -51,6 +51,8 @@ class SimulateTrotterLowRank(QuantumCircuit):
         final_rank: Optional[int] = None,
         spin_basis: bool = False,
         qubit_converter: Optional[QubitConverter] = None,
+        register: Optional[QuantumRegister] = None,
+        control_register: Optional[QuantumRegister] = None,
         **circuit_kwargs,
     ) -> None:
         r"""
@@ -66,14 +68,18 @@ class SimulateTrotterLowRank(QuantumCircuit):
             qubit_converter = QubitConverter(JordanWignerMapper())
 
         n, _ = one_body_tensor.shape
-        register = QuantumRegister(n)
+        register = register or QuantumRegister(n)
         super().__init__(register, **circuit_kwargs)
+        if control_register:
+            self.add_register(control_register)
 
         if isinstance(qubit_converter.mapper, JordanWignerMapper):
             trotter_step = AsymmetricLowRankTrotterStepJW(
                 one_body_tensor, two_body_tensor, final_rank=final_rank, spin_basis=spin_basis
             )
-            operations = _simulate_trotter(register, trotter_step, time, n_steps)
+            operations = _simulate_trotter(
+                register, trotter_step, time, n_steps=n_steps, control_register=control_register
+            )
             for gate, qubits in operations:
                 self.append(gate, qubits)
         else:
@@ -90,11 +96,12 @@ def _simulate_trotter(
     register: QuantumRegister,
     trotter_step: AsymmetricLowRankTrotterStepJW,
     time: float,
-    n_steps: int,
+    n_steps: int = 1,
+    control_register: Optional[QuantumRegister] = None,
 ) -> Iterator[tuple[Instruction, Sequence[Qubit]]]:
     step_time = time / n_steps
     for _ in range(n_steps):
-        yield from trotter_step.trotter_step(register, step_time)
+        yield from trotter_step.trotter_step(register, step_time, control_register=control_register)
 
 
 class AsymmetricLowRankTrotterStepJW:
@@ -143,15 +150,26 @@ class AsymmetricLowRankTrotterStepJW:
         self.constant = constant_correction
 
     def trotter_step(
-        self, register: QuantumRegister, time: float
+        self,
+        register: QuantumRegister,
+        time: float,
+        control_register: Optional[QuantumRegister] = None,
     ) -> Iterator[tuple[Instruction, Sequence[Qubit]]]:
         if self.spin_basis:
-            yield from self._trotter_step_spin(register, time)
+            if control_register:
+                yield from self._trotter_step_spin_controlled(register, time, control_register)
+            else:
+                yield from self._trotter_step_spin(register, time)
         else:
-            yield from self._trotter_step_spatial(register, time)
+            if control_register:
+                yield from self._trotter_step_spatial_controlled(register, time, control_register)
+            else:
+                yield from self._trotter_step_spatial(register, time)
 
     def _trotter_step_spin(
-        self, register: QuantumRegister, time: float
+        self,
+        register: QuantumRegister,
+        time: float,
     ) -> Iterator[tuple[Instruction, Sequence[Qubit]]]:
         n_qubits = len(register)
         n_modes = n_qubits // 2
@@ -189,10 +207,7 @@ class AsymmetricLowRankTrotterStepJW:
                         + core_tensor[j % n_modes, i % n_modes]
                     )
                     * time
-                ), (
-                    register[i],
-                    register[j],
-                )
+                ), (register[i], register[j])
             # update prior basis change matrix
             prior_transformation_matrix = leaf_tensor.T
 
@@ -201,8 +216,74 @@ class AsymmetricLowRankTrotterStepJW:
         yield bog_circuit, register[:n_modes]
         yield bog_circuit, register[n_modes:]
 
+    def _trotter_step_spin_controlled(
+        self,
+        register: QuantumRegister,
+        time: float,
+        control_register: QuantumRegister,
+    ) -> Iterator[tuple[Instruction, Sequence[Qubit]]]:
+        n_qubits = len(register)
+        n_modes = n_qubits // 2
+        n_control_qubits = len(control_register)
+
+        # compute basis change that diagonalizes one-body term
+        transformation_matrix, orbital_energies, _ = QuadraticHamiltonian(
+            self.one_body_tensor
+        ).diagonalizing_bogoliubov_transform()
+
+        # change to the basis in which the one-body term is diagonal
+        bog_circuit = BogoliubovTransform(transformation_matrix.T.conj())
+        yield bog_circuit, register[:n_modes]
+        yield bog_circuit, register[n_modes:]
+
+        # simulate the one-body terms
+        for i in range(n_modes):
+            rz_gate = RZGate(-orbital_energies[i] * time).control(n_control_qubits)
+            yield rz_gate, list(control_register) + [register[i]]
+            yield rz_gate, list(control_register) + [register[n_modes + i]]
+            if n_control_qubits == 1:
+                yield RZGate(-0.5 * orbital_energies[i] * time), control_register
+            else:
+                yield RZGate(-0.5 * orbital_energies[i] * time).control(
+                    n_control_qubits - 1
+                ), control_register
+
+        # simulate the two-body terms
+        prior_transformation_matrix = transformation_matrix
+        for leaf_tensor, core_tensor in zip(self.leaf_tensors, self.core_tensors):
+            # change basis
+            merged_transformation_matrix = prior_transformation_matrix @ leaf_tensor.conj()
+            bog_circuit = BogoliubovTransform(merged_transformation_matrix)
+            yield bog_circuit, register[:n_modes]
+            yield bog_circuit, register[n_modes:]
+            # simulate two-body terms
+            for i, j in itertools.combinations(range(n_qubits), 2):
+                yield RZZGate(
+                    0.25
+                    * (
+                        core_tensor[i % n_modes, j % n_modes]
+                        + core_tensor[j % n_modes, i % n_modes]
+                    )
+                    * time
+                ).control(n_control_qubits), list(control_register) + [register[i], register[j]]
+            # update prior basis change matrix
+            prior_transformation_matrix = leaf_tensor.T
+
+        # undo final basis change
+        bog_circuit = BogoliubovTransform(prior_transformation_matrix)
+        yield bog_circuit, register[:n_modes]
+        yield bog_circuit, register[n_modes:]
+
+        # apply phase from constant term
+        if n_control_qubits == 1:
+            yield RZGate(-self.constant * time), control_register
+        else:
+            yield RZGate(-self.constant * time).control(n_control_qubits - 1), control_register
+
     def _trotter_step_spatial(
-        self, register: QuantumRegister, time: float
+        self,
+        register: QuantumRegister,
+        time: float,
     ) -> Iterator[tuple[Instruction, Sequence[Qubit]]]:
         n_qubits = len(register)
 
@@ -235,3 +316,51 @@ class AsymmetricLowRankTrotterStepJW:
 
         # undo final basis change
         yield BogoliubovTransform(prior_transformation_matrix), register
+
+    def _trotter_step_spatial_controlled(
+        self,
+        register: QuantumRegister,
+        time: float,
+        control_register: QuantumRegister,
+    ) -> Iterator[tuple[Instruction, Sequence[Qubit]]]:
+        n_qubits = len(register)
+        n_control_qubits = len(control_register)
+
+        # compute basis change that diagonalizes one-body term
+        transformation_matrix, orbital_energies, _ = QuadraticHamiltonian(
+            self.one_body_tensor
+        ).diagonalizing_bogoliubov_transform()
+
+        # change to the basis in which the one-body term is diagonal
+        yield BogoliubovTransform(transformation_matrix.T.conj()), register
+
+        # simulate the one-body terms
+        for qubit, energy in zip(register, orbital_energies):
+            yield RZGate(-energy * time).control(n_control_qubits), list(control_register) + [qubit]
+            if n_control_qubits == 1:
+                yield RZGate(-0.5 * energy * time), control_register
+            else:
+                yield RZGate(-0.5 * energy * time).control(n_control_qubits - 1), control_register
+
+        # simulate the two-body terms
+        prior_transformation_matrix = transformation_matrix
+        for leaf_tensor, core_tensor in zip(self.leaf_tensors, self.core_tensors):
+            # change basis
+            merged_transformation_matrix = prior_transformation_matrix @ leaf_tensor.conj()
+            yield BogoliubovTransform(merged_transformation_matrix), register
+            # simulate two-body terms
+            for i, j in itertools.combinations(range(n_qubits), 2):
+                yield RZZGate(0.25 * (core_tensor[i, j] + core_tensor[j, i]) * time).control(
+                    n_control_qubits
+                ), list(control_register) + [register[i], register[j]]
+            # update prior basis change matrix
+            prior_transformation_matrix = leaf_tensor.T
+
+        # undo final basis change
+        yield BogoliubovTransform(prior_transformation_matrix), register
+
+        # apply phase from constant term
+        if n_control_qubits == 1:
+            yield RZGate(-self.constant * time), control_register
+        else:
+            yield RZGate(-self.constant * time).control(n_control_qubits - 1), control_register
