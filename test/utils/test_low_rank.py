@@ -28,10 +28,10 @@ from qiskit_nature.properties.second_quantization.electronic.integrals import (
     TwoBodyElectronicIntegrals,
 )
 from qiskit_nature.utils.low_rank import (
+    _low_rank_compressed_two_body_decomposition,
+    _low_rank_optimal_core_tensors,
+    _low_rank_two_body_decomposition,
     low_rank_decomposition,
-    low_rank_optimal_core_tensors,
-    low_rank_compressed_two_body_decomposition,
-    low_rank_two_body_decomposition,
     low_rank_z_representation,
 )
 
@@ -220,7 +220,7 @@ class TestLowRank(QiskitNatureTestCase):
         two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
 
         _, leaf_tensors, core_tensors = low_rank_decomposition(one_body_tensor, two_body_tensor)
-        core_tensors = low_rank_optimal_core_tensors(
+        core_tensors = _low_rank_optimal_core_tensors(
             two_body_tensor, leaf_tensors, cutoff_threshold=1e-8
         )
 
@@ -238,7 +238,7 @@ class TestLowRank(QiskitNatureTestCase):
         """Test low rank two-body decomposition."""
         n_orbitals = 5
         two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
-        leaf_tensors, core_tensors = low_rank_two_body_decomposition(two_body_tensor)
+        leaf_tensors, core_tensors = _low_rank_two_body_decomposition(two_body_tensor)
 
         reconstructed = np.einsum(
             "tpk,tqk,tkl,trl,tsl->pqrs",
@@ -254,7 +254,7 @@ class TestLowRank(QiskitNatureTestCase):
         """Test low rank compressed two-body decomposition."""
         n_orbitals = 4
         two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
-        leaf_tensors, core_tensors = low_rank_compressed_two_body_decomposition(two_body_tensor)
+        leaf_tensors, core_tensors = _low_rank_compressed_two_body_decomposition(two_body_tensor)
 
         reconstructed = np.einsum(
             "tpk,tqk,tkl,trl,tsl->pqrs",

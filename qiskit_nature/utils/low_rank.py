@@ -10,11 +10,10 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
-"""Linear algebra utilities."""
+"""Low rank decomposition utilities."""
 
 from __future__ import annotations
 
-import itertools
 from typing import Optional
 
 import numpy as np
@@ -26,6 +25,7 @@ def low_rank_decomposition(
     one_body_tensor: np.ndarray,
     two_body_tensor: np.ndarray,
     *,
+    truncation_threshold: float = 1e-8,
     final_rank: Optional[int] = None,
     spin_basis: bool = False,
     optimize: bool = False,
@@ -33,12 +33,12 @@ def low_rank_decomposition(
     options: Optional[dict] = None,
     validate: bool = True,
     atol: float = 1e-8,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     r"""Low rank decomposition of a molecular Hamiltonian.
 
     The low rank decomposition acts on a Hamiltonian of the form
 
-    ..math::
+    .. math::
 
         H = \sum_{pq} h_{pq} a^\dagger_p a_q
             + \frac12 \sum_{pqrs} h_{pqrs} a^\dagger_p a^\dagger_r a_s a_q
@@ -46,23 +46,29 @@ def low_rank_decomposition(
 
     The Hamiltonian is decomposed into the form
 
-    ..math::
+    .. math::
 
         H = \sum_{pq} \kappa_{pq} a^\dagger_p a_q + \frac12 \sum_t \sum_{ij} Z^{(t)}_{ij} n^{(t)}_i n^{t}_j
 
     where
 
-    ..math::
+    .. math::
 
         n^{(t)}_i = \sum_{pq} U^{(t)}_{pi} a^\dagger_p a^\dagger_q U^{(t)}_{qi}.
 
     Here :math:`U^(t)_{ij}` and :math:`Z^(t)_{ij}` are tensors that are output by the decomposition.
     Each matrix :math:`U^(t)` is guaranteed to be unitary so that the :math:`n^{(t)}_i` are
     number operators in a rotated basis.
-    The value :math:`t` is the "final rank" of the decomposition and can be chosen by the user.
-    The default behavior is to use a full rank of :math:`N^2`, which yields an exact decomposition.
-    Specifying a smaller final rank will truncate smaller terms from the decompsition, introducing
-    some error.
+    The value :math:`t` is the "final rank" of the decomposition and it is affected by two
+    parameters: `truncation_threshold` and `final_rank`.
+    The effect of `truncation_threshold` is that the core tensors :math:`Z^{(t)}` are elided
+    in order of increasing Frobenius norm until the maximum number are removed such that the
+    sum of the Frobenius norms of those removed does not exceed the threshold.
+    The `final_rank` parameter specifies an optional upper bound on :math:`t`.
+    Note that the number of terms in the decomposition may be smaller than `final_rank`
+    due to the truncation.
+
+    Note: Currently, only real-valued tensors are supported.
 
     References:
         - `arXiv:1808.02625`_
@@ -74,17 +80,17 @@ def low_rank_decomposition(
     Args:
         one_body_tensor: The one-body tensor.
         two_body_tensor: The two-body tensor.
-        final_rank: The desired number of terms to keep in the decomposition
+        truncation_threshold: The threshold for truncating the core tensors.
+        final_rank: An optional limit on the number of terms to keep in the decomposition
             of the two-body tensor.
-            The default behavior is to include all terms, which yields an
-            exact decomposition.
         spin_basis: Whether the tensors are specified in the spin-orbital basis.
             If so, the interaction must be spin-symmetric.
         validate: Whether to check that the input tensors have the correct symmetries.
         atol: Absolute numerical tolerance for input validation.
 
     Returns:
-        The corrected one-body tensor, leaf tensors, core tensors, and constant term
+        The corrected one-body tensor :math:`kappa`,
+        leaf tensors :math:`U^t`, and core tensors :math:`Z^t`.
     """
     if spin_basis:
         # tensors are specified in the spin-orbital basis, so reduce to
@@ -100,17 +106,22 @@ def low_rank_decomposition(
     sign = 1 if spin_basis else -1
     corrected_one_body_tensor = one_body_tensor + sign * 0.5 * np.einsum("prqr", two_body_tensor)
     if optimize:
-        leaf_tensors, core_tensors = low_rank_compressed_two_body_decomposition(
+        leaf_tensors, core_tensors = _low_rank_compressed_two_body_decomposition(
             two_body_tensor,
             final_rank=final_rank,
+            truncation_threshold=truncation_threshold,
             method=method,
             options=options,
             validate=validate,
             atol=atol,
         )
     else:
-        leaf_tensors, core_tensors = low_rank_two_body_decomposition(
-            two_body_tensor, final_rank=final_rank, validate=validate, atol=atol
+        leaf_tensors, core_tensors = _low_rank_two_body_decomposition(
+            two_body_tensor,
+            final_rank=final_rank,
+            truncation_threshold=truncation_threshold,
+            validate=validate,
+            atol=atol,
         )
 
     if spin_basis:
@@ -122,33 +133,14 @@ def low_rank_decomposition(
     return corrected_one_body_tensor, leaf_tensors, core_tensors
 
 
-# TODO add truncation threshold option
-# TODO add support for complex orbitals
-def low_rank_two_body_decomposition(
+def _low_rank_two_body_decomposition(
     two_body_tensor: np.ndarray,
     *,
+    truncation_threshold: float = 1e-8,
     final_rank: Optional[int] = None,
     validate: bool = True,
     atol: float = 1e-8,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Low rank decomposition of a two-body tensor.
-
-    References:
-        - `arXiv:1808.02625`_
-        - `arXiv:2104.08957`_
-
-    .. _arXiv:1808.02625: https://arxiv.org/abs/1808.02625
-    .. _arXiv:2104.08957: https://arxiv.org/abs/2104.08957
-
-    Args:
-        two_body_tensor: The two-body tensor to decompose. The tensor indices
-            should be ordered according to the "chemist" convention.
-        final_rank: The desired number of terms to keep in the decomposition.
-            The default behavior is to include all terms, which yields an
-            exact decomposition.
-        validate: Whether to check that the input tensors have the correct symmetries.
-        atol: Absolute numerical tolerance for input validation.
-    """
     n_modes, _, _, _ = two_body_tensor.shape
     full_rank = n_modes**2
     if final_rank is None:
@@ -162,10 +154,22 @@ def low_rank_two_body_decomposition(
             raise ValueError("Two-body tensor must be symmetric.")
 
     outer_eigs, outer_vecs = np.linalg.eigh(reshaped_tensor)
-    indices = np.argsort(np.abs(outer_eigs))[-1 : -final_rank - 1 : -1]
+    # sort by absolute value
+    indices = np.argsort(np.abs(outer_eigs))
+    outer_eigs = outer_eigs[indices]
+    outer_vecs = outer_vecs[:, indices]
+    # get index to truncate at
+    index = np.searchsorted(np.cumsum(np.abs(outer_eigs)), truncation_threshold)
+    # truncate, then reverse to put into descending order of absolute value
+    outer_eigs = outer_eigs[index:][::-1]
+    outer_vecs = outer_vecs[:, index:][:, ::-1]
+    # truncate to final rank
+    outer_eigs = outer_eigs[:final_rank]
+    outer_vecs = outer_vecs[:, :final_rank]
+
     leaf_tensors = []
     core_tensors = []
-    for i in indices:
+    for i in range(len(outer_eigs)):
         mat = np.reshape(outer_vecs[:, i], (n_modes, n_modes))
         inner_eigs, inner_vecs = np.linalg.eigh(mat)
         core_tensor = outer_eigs[i] * np.outer(inner_eigs, inner_eigs)
@@ -178,6 +182,48 @@ def low_rank_two_body_decomposition(
 def low_rank_z_representation(
     leaf_tensors: np.ndarray, core_tensors: np.ndarray
 ) -> tuple[np.ndarray, float]:
+    r"""Compute "Z" representation of low rank decomposition.
+
+    The "Z" representation of the low rank decomposition is an alternative
+    decomposition that sometimes yields simpler quantum circuits.
+    Recall that the original low rank decomposition takes the form
+
+    .. math::
+
+        H = \sum_{pq} \kappa_{pq} a^\dagger_p a_q + \frac12 \sum_t \sum_{ij} Z^{(t)}_{ij} n^{(t)}_i n^{t}_j
+
+    where the :math:`n^{(t)}_i` are number operators in a rotated basis:
+
+    .. math::
+
+        n^{(t)}_i = \sum_{pq} U^{(t)}_{pi} a^\dagger_p a^\dagger_q U^{(t)}_{qi}.
+
+    Under the Jordan-Wigner transformation, the number operators take the form
+
+    .. math::
+
+        n^{(t)}_i = \frac{(1 - z^{(t)}_i)}{2}
+
+    where :math:`z^{(t)}_i` is Pauli Z operator in the rotated basis.
+    The "Z" representation is obtained by rewriting the two-body part in terms of these Pauli Z operators:
+
+    .. math::
+
+        H = \sum_{pq} \kappa_{pq} a^\dagger_p a_q
+        + \sum_{pq} \tilde{kappa}_{pq} a^\dagger_p a_q
+        + \frac18 \sum_t \sum_{ij} Z^{(t)}_{ij} z^{(t)}_i z^{t}_j
+        + \text{constant}
+
+    Here :math:`\tilde{kappa}_{pq}` is a correction to the one-body term, and `\text{constant}` is a correction
+    to the constant term of the Hamiltonian.
+
+    Args:
+        leaf_tensors: The leaf tensors :math:`U^{(t)}` of the low rank decomposition.
+        core_tensors: The core tensors :math:`Z^{t)}` of the low rank decomposition.
+
+    Returns:
+        The one-body correction :math:`\tilde{kappa}` and the constant correction :math:`\text{constant}`.
+    """
     one_body_correction = 0.25 * (
         np.einsum("tij,tpi,tqi->pq", core_tensors, leaf_tensors, leaf_tensors.conj())
         + np.einsum("tij,tpj,tqj->pq", core_tensors, leaf_tensors, leaf_tensors.conj())
@@ -186,25 +232,10 @@ def low_rank_z_representation(
     return one_body_correction, constant_correction
 
 
-def low_rank_optimal_core_tensors(
+def _low_rank_optimal_core_tensors(
     two_body_tensor: np.ndarray, leaf_tensors: np.ndarray, cutoff_threshold: float = 1e-8
 ) -> np.ndarray:
-    """Compute optimal low rank core tensors given fixed leaf tensors.
-
-    References:
-        - `arXiv:1808.02625`_
-        - `arXiv:2104.08957`_
-
-    .. _arXiv:1808.02625: https://arxiv.org/abs/1808.02625
-    .. _arXiv:2104.08957: https://arxiv.org/abs/2104.08957
-
-    Args:
-        two_body_tensor: The two-body tensor to decompose. The tensor indices
-            should be ordered according to the "chemistry" convention.
-        leaf_tensors: The leaf tensors of the low rank decomposition.
-        cutoff_threshold: Eigenvalues smaller than this value will be ignored
-            when solving the least-squares problem.
-    """
+    """Compute optimal low rank core tensors given fixed leaf tensors."""
     n_modes, _, _, _ = two_body_tensor.shape
     n_tensors, _, _ = leaf_tensors.shape
 
@@ -234,23 +265,28 @@ def low_rank_optimal_core_tensors(
     return np.reshape(solution, (n_tensors, n_modes, n_modes))
 
 
-def low_rank_compressed_two_body_decomposition(
+def _low_rank_compressed_two_body_decomposition(
     two_body_tensor,
     *,
+    truncation_threshold: float = 1e-8,
     final_rank: Optional[int] = None,
     method="L-BFGS-B",
     options: Optional[dict] = None,
     validate: bool = True,
     atol: float = 1e-8,
 ):
-    leaf_tensors, _ = low_rank_two_body_decomposition(
-        two_body_tensor, final_rank=final_rank, validate=validate, atol=atol
+    leaf_tensors, _ = _low_rank_two_body_decomposition(
+        two_body_tensor,
+        truncation_threshold=truncation_threshold,
+        final_rank=final_rank,
+        validate=validate,
+        atol=atol,
     )
     n_tensors, n_modes, _ = leaf_tensors.shape
 
     def fun(x):
         leaf_tensors = _params_to_leaf_tensors(x, n_tensors, n_modes)
-        core_tensors = low_rank_optimal_core_tensors(two_body_tensor, leaf_tensors)
+        core_tensors = _low_rank_optimal_core_tensors(two_body_tensor, leaf_tensors)
         diff = two_body_tensor - np.einsum(
             "tpk,tqk,tkl,trl,tsl->pqrs",
             leaf_tensors,
@@ -263,7 +299,7 @@ def low_rank_compressed_two_body_decomposition(
 
     def jac(x):
         leaf_tensors = _params_to_leaf_tensors(x, n_tensors, n_modes)
-        core_tensors = low_rank_optimal_core_tensors(two_body_tensor, leaf_tensors)
+        core_tensors = _low_rank_optimal_core_tensors(two_body_tensor, leaf_tensors)
         diff = two_body_tensor - np.einsum(
             "tpk,tqk,tkl,trl,tsl->pqrs",
             leaf_tensors,
@@ -286,7 +322,7 @@ def low_rank_compressed_two_body_decomposition(
     x0 = _leaf_tensors_to_params(leaf_tensors)
     result = scipy.optimize.minimize(fun, x0, method=method, jac=jac, options=options)
     leaf_tensors = _params_to_leaf_tensors(result.x, n_tensors, n_modes)
-    core_tensors = low_rank_optimal_core_tensors(two_body_tensor, leaf_tensors)
+    core_tensors = _low_rank_optimal_core_tensors(two_body_tensor, leaf_tensors)
 
     return leaf_tensors, core_tensors
 
