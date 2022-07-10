@@ -63,6 +63,9 @@ class SimulateTrotterLowRank(QuantumCircuit):
             qubit_converter: The qubit converter. The default behavior is to create
                 one using the call `QubitConverter(JordanWignerMapper())`.
             circuit_kwargs: Keyword arguments to pass to the QuantumCircuit initializer.
+
+        Raises:
+            NotImplementedError: Currently, only the Jordan-Wigner Transform is supported.
         """
         if qubit_converter is None:
             qubit_converter = QubitConverter(JordanWignerMapper())
@@ -155,6 +158,7 @@ class AsymmetricLowRankTrotterStepJW:
         time: float,
         control_register: Optional[QuantumRegister] = None,
     ) -> Iterator[tuple[Instruction, Sequence[Qubit]]]:
+        """Perform a Trotter step."""
         if self.spin_basis:
             if control_register:
                 yield from self._trotter_step_spin_controlled(register, time, control_register)

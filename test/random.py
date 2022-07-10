@@ -29,7 +29,7 @@ def parse_random_seed(seed: Any) -> np.random.Generator:
     Args:
         seed: The pseudorandom number generator or seed. Should be an
             instance of `np.random.Generator` or else a valid input to
-            `np.random.default_rng`
+            `np.random.default_rng`.
 
     Returns:
         The np.random.Generator instance
@@ -48,7 +48,7 @@ def random_antisymmetric_matrix(dim: int, seed: Any = None) -> np.ndarray:
         dim: The width and height of the matrix.
         seed: The pseudorandom number generator or seed. Should be an
             instance of `np.random.Generator` or else a valid input to
-            `np.random.default_rng`
+            `np.random.default_rng`.
 
     Returns:
         The sampled antisymmetric matrix.
@@ -68,7 +68,7 @@ def random_quadratic_hamiltonian(
         num_conserving: whether the Hamiltonian should conserve particle number
         seed: The pseudorandom number generator or seed. Should be an
             instance of `np.random.Generator` or else a valid input to
-            `np.random.default_rng`
+            `np.random.default_rng`.
 
     Returns:
         The sampled QuadraticHamiltonian
@@ -87,7 +87,19 @@ def random_quadratic_hamiltonian(
 def random_two_body_tensor(
     n_orbitals: int, real: bool = False, chemist: bool = False, seed: Any = None
 ) -> np.ndarray:
-    """Sample a random two-body tensor using "physicist" indexing convention."""
+    """Sample a random two-body tensor.
+
+    Args:
+        n_orbitals: The number of orbitals.
+        real: Whether the tensor should be real-valued.
+        chemist: Whether the tensor should use the "chemist" indexing convention.
+        seed: The pseudorandom number generator or seed. Should be an
+            instance of `np.random.Generator` or else a valid input to
+            `np.random.default_rng`.
+
+    Returns:
+        The sampled two-body tensor.
+    """
     if chemist:
         return _random_two_body_tensor_chemist(n_orbitals, real, seed)
     return _random_two_body_tensor_physicist(n_orbitals, real, seed)
@@ -115,7 +127,9 @@ def _random_two_body_tensor_chemist(n_orbitals: int, real: bool, seed: Any) -> n
     return two_body_tensor
 
 
-def _random_two_body_tensor_physicist(n_orbitals: int, real: bool, seed: Any) -> np.ndarray:
+def _random_two_body_tensor_physicist(  # pylint: disable=invalid-name
+    n_orbitals: int, real: bool, seed: Any
+) -> np.ndarray:
     rng = parse_random_seed(seed)
     two_body_tensor = np.zeros(
         (n_orbitals, n_orbitals, n_orbitals, n_orbitals),

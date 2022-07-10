@@ -48,7 +48,9 @@ def low_rank_decomposition(
 
     .. math::
 
-        H = \sum_{pq} \kappa_{pq} a^\dagger_p a_q + \frac12 \sum_t \sum_{ij} Z^{(t)}_{ij} n^{(t)}_i n^{t}_j
+        H = \sum_{pq} \kappa_{pq} a^\dagger_p a_q
+        + \frac12 \sum_t \sum_{ij} Z^{(t)}_{ij} n^{(t)}_i n^{t}_j
+        + \text{constant}.
 
     where
 
@@ -56,8 +58,9 @@ def low_rank_decomposition(
 
         n^{(t)}_i = \sum_{pq} U^{(t)}_{pi} a^\dagger_p a^\dagger_q U^{(t)}_{qi}.
 
-    Here :math:`U^(t)_{ij}` and :math:`Z^(t)_{ij}` are tensors that are output by the decomposition.
-    Each matrix :math:`U^(t)` is guaranteed to be unitary so that the :math:`n^{(t)}_i` are
+    Here :math:`U^{(t)}_{ij}` and :math:`Z^{(t)}_{ij}` are tensors that are output by the decomposition,
+    and :math:`\kappa_{pq}` is an updated one-body tensor.
+    Each matrix :math:`U^{(t)}` is guaranteed to be unitary so that the :math:`n^{(t)}_i` are
     number operators in a rotated basis.
     The value :math:`t` is the "final rank" of the decomposition and it is affected by two
     parameters: `truncation_threshold` and `final_rank`.
@@ -68,7 +71,17 @@ def low_rank_decomposition(
     Note that the number of terms in the decomposition may be smaller than `final_rank`
     due to the truncation.
 
-    Note: Currently, only real-valued tensors are supported.
+    The default behavior of this routine is to perform a straightforward
+    "exact" factorization of the two-body tensor based on a nested
+    eigenvalue decomposition. Additionally, one can choose to optimize the
+    coefficients stored in the tensor to achieve a "compressed" factorization.
+    This option is enabled by setting the `optimize` parameter to `True`.
+    The optimization attempts to minimize a least-squares objective function
+    quantifying the error in the low rank decomposition.
+    It uses `scipy.optimize.minimize`, passing both the objective function
+    and its gradient.
+
+    Note: Currently, only real-valued two-body tensors are supported.
 
     References:
         - `arXiv:1808.02625`_
@@ -85,13 +98,25 @@ def low_rank_decomposition(
             of the two-body tensor.
         spin_basis: Whether the tensors are specified in the spin-orbital basis.
             If so, the interaction must be spin-symmetric.
+        optimize: Whether to optimize the tensors returned by the decomposition.
+        method: The optimization method. See the documentation of
+            `scipy.optimize.minimize` for possible values.
+        options: Options for the optimization. See the documentation of
+            `scipy.optimize.minimize` for usage.
         validate: Whether to check that the input tensors have the correct symmetries.
         atol: Absolute numerical tolerance for input validation.
 
     Returns:
-        The corrected one-body tensor :math:`kappa`,
+        The corrected one-body tensor :math:`\kappa`,
         leaf tensors :math:`U^t`, and core tensors :math:`Z^t`.
+
+    Raises:
+        ValueError: The input tensors do not have the correct symmetries.
     """
+    if validate:
+        if not np.allclose(one_body_tensor, one_body_tensor.T.conj(), atol=atol):
+            raise ValueError("One-body tensor must be hermitian.")
+
     if spin_basis:
         # tensors are specified in the spin-orbital basis, so reduce to
         # spatial orbital basis assuming a spin-symmetric interaction
@@ -133,7 +158,7 @@ def low_rank_decomposition(
     return corrected_one_body_tensor, leaf_tensors, core_tensors
 
 
-def _low_rank_two_body_decomposition(
+def _low_rank_two_body_decomposition(  # pylint: disable=invalid-name
     two_body_tensor: np.ndarray,
     *,
     truncation_threshold: float = 1e-8,
@@ -169,10 +194,10 @@ def _low_rank_two_body_decomposition(
 
     leaf_tensors = []
     core_tensors = []
-    for i in range(len(outer_eigs)):
-        mat = np.reshape(outer_vecs[:, i], (n_modes, n_modes))
+    for outer_eig, outer_vec in zip(outer_eigs, outer_vecs.T):
+        mat = np.reshape(outer_vec, (n_modes, n_modes))
         inner_eigs, inner_vecs = np.linalg.eigh(mat)
-        core_tensor = outer_eigs[i] * np.outer(inner_eigs, inner_eigs)
+        core_tensor = outer_eig * np.outer(inner_eigs, inner_eigs)
         leaf_tensors.append(inner_vecs)
         core_tensors.append(core_tensor)
 
@@ -190,7 +215,9 @@ def low_rank_z_representation(
 
     .. math::
 
-        H = \sum_{pq} \kappa_{pq} a^\dagger_p a_q + \frac12 \sum_t \sum_{ij} Z^{(t)}_{ij} n^{(t)}_i n^{t}_j
+        H = \sum_{pq} \kappa_{pq} a^\dagger_p a_q
+        + \frac12 \sum_t \sum_{ij} Z^{(t)}_{ij} n^{(t)}_i n^{t}_j
+        + \text{constant}.
 
     where the :math:`n^{(t)}_i` are number operators in a rotated basis:
 
@@ -205,24 +232,27 @@ def low_rank_z_representation(
         n^{(t)}_i = \frac{(1 - z^{(t)}_i)}{2}
 
     where :math:`z^{(t)}_i` is Pauli Z operator in the rotated basis.
-    The "Z" representation is obtained by rewriting the two-body part in terms of these Pauli Z operators:
+    The "Z" representation is obtained by rewriting the two-body part in terms
+    of these Pauli Z operators:
 
     .. math::
 
         H = \sum_{pq} \kappa_{pq} a^\dagger_p a_q
-        + \sum_{pq} \tilde{kappa}_{pq} a^\dagger_p a_q
+        + \sum_{pq} \tilde{\kappa}_{pq} a^\dagger_p a_q
         + \frac18 \sum_t \sum_{ij} Z^{(t)}_{ij} z^{(t)}_i z^{t}_j
         + \text{constant}
+        + \text{constant}'
 
-    Here :math:`\tilde{kappa}_{pq}` is a correction to the one-body term, and `\text{constant}` is a correction
-    to the constant term of the Hamiltonian.
+    Here :math:`\tilde{\kappa}_{pq}` is a correction to the one-body term
+    and :math:`\text{constant'}` is a correction to the constant term of the Hamiltonian.
 
     Args:
         leaf_tensors: The leaf tensors :math:`U^{(t)}` of the low rank decomposition.
         core_tensors: The core tensors :math:`Z^{t)}` of the low rank decomposition.
 
     Returns:
-        The one-body correction :math:`\tilde{kappa}` and the constant correction :math:`\text{constant}`.
+        The one-body correction :math:`\tilde{\kappa}`
+        and the constant correction :math:`\text{constant}'`.
     """
     one_body_correction = 0.25 * (
         np.einsum("tij,tpi,tqi->pq", core_tensors, leaf_tensors, leaf_tensors.conj())
@@ -265,7 +295,7 @@ def _low_rank_optimal_core_tensors(
     return np.reshape(solution, (n_tensors, n_modes, n_modes))
 
 
-def _low_rank_compressed_two_body_decomposition(
+def _low_rank_compressed_two_body_decomposition(  # pylint: disable=invalid-name
     two_body_tensor,
     *,
     truncation_threshold: float = 1e-8,

@@ -169,8 +169,12 @@ class TestLowRank(QiskitNatureTestCase):
                     )
                 num_ops.append(num_op)
             for i, j in itertools.combinations(range(n_orbitals), 2):
-                z1 = FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[i]
-                z2 = FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[j]
+                z1 = (  # pylint: disable=invalid-name
+                    FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[i]
+                )
+                z2 = (  # pylint: disable=invalid-name
+                    FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[j]
+                )
                 actual += 0.125 * (core_tensor[i, j]) * z1 @ z2
                 actual += 0.125 * (core_tensor[j, i]) * z1 @ z2
 
@@ -206,8 +210,12 @@ class TestLowRank(QiskitNatureTestCase):
                     )
                 num_ops.append(num_op)
             for i, j in itertools.combinations(range(n_orbitals), 2):
-                z1 = FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[i]
-                z2 = FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[j]
+                z1 = (  # pylint: disable=invalid-name
+                    FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[i]
+                )
+                z2 = (  # pylint: disable=invalid-name
+                    FermionicOp.one(register_length=n_orbitals) - 2 * num_ops[j]
+                )
                 actual += 0.125 * (core_tensor[i, j]) * z1 @ z2
                 actual += 0.125 * (core_tensor[j, i]) * z1 @ z2
 
