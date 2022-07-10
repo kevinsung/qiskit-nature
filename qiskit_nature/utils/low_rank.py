@@ -184,7 +184,7 @@ def _low_rank_two_body_decomposition(  # pylint: disable=invalid-name
     outer_eigs = outer_eigs[indices]
     outer_vecs = outer_vecs[:, indices]
     # get index to truncate at
-    index = np.searchsorted(np.cumsum(np.abs(outer_eigs)), truncation_threshold)
+    index = int(np.searchsorted(np.cumsum(np.abs(outer_eigs)), truncation_threshold))
     # truncate, then reverse to put into descending order of absolute value
     outer_eigs = outer_eigs[index:][::-1]
     outer_vecs = outer_vecs[:, index:][:, ::-1]

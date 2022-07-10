@@ -13,7 +13,7 @@
 """Methods to sample random objects."""
 
 import itertools
-from typing import Any
+from typing import Any, Union
 
 import numpy as np
 from qiskit.quantum_info import random_hermitian
@@ -112,7 +112,7 @@ def _random_two_body_tensor_chemist(n_orbitals: int, real: bool, seed: Any) -> n
         dtype=float if real else complex,
     )
     for p, q, r, s in itertools.product(range(n_orbitals), repeat=4):
-        coeff = rng.standard_normal()
+        coeff: complex = rng.standard_normal()
         if not real and len(set((p, q, r, s))) > 2:
             coeff += 1j * rng.standard_normal()
         two_body_tensor[p, q, r, s] = coeff
@@ -136,7 +136,7 @@ def _random_two_body_tensor_physicist(  # pylint: disable=invalid-name
         dtype=float if real else complex,
     )
     for p, q, r, s in itertools.product(range(n_orbitals), repeat=4):
-        coeff = rng.standard_normal()
+        coeff: complex = rng.standard_normal()
         if not real and len(set((p, q, r, s))) > 2:
             coeff += 1j * rng.standard_normal()
         two_body_tensor[p, q, r, s] = coeff
