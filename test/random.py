@@ -13,7 +13,7 @@
 """Methods to sample random objects."""
 
 import itertools
-from typing import Any, Union
+from typing import Any
 
 import numpy as np
 from qiskit.quantum_info import random_hermitian
