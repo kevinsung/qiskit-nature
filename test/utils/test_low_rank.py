@@ -41,7 +41,6 @@ class TestLowRank(QiskitNatureTestCase):
 
     def test_low_rank_decomposition(self):
         """Test low rank decomposition."""
-        # TODO would test higher number of orbitals but normal ordering is slow
         n_orbitals = 3
         one_body_tensor = np.array(random_hermitian(n_orbitals))
         two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
@@ -140,7 +139,6 @@ class TestLowRank(QiskitNatureTestCase):
 
     def test_low_rank_decomposition_z_representation(self):
         """Test low rank decomposition equation "Z" representation."""
-        # TODO would test higher number of orbitals but normal ordering is slow
         n_orbitals = 3
         one_body_tensor = np.array(random_hermitian(n_orbitals))
         two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
@@ -223,7 +221,7 @@ class TestLowRank(QiskitNatureTestCase):
 
     def test_low_rank_decomposition_optimal_core_tensors(self):
         """Test low rank decomposition optimal core tensors."""
-        n_orbitals = 5
+        n_orbitals = 4
         one_body_tensor = np.array(random_hermitian(n_orbitals))
         two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
 
@@ -244,7 +242,7 @@ class TestLowRank(QiskitNatureTestCase):
 
     def test_low_rank_two_body_decomposition(self):
         """Test low rank two-body decomposition."""
-        n_orbitals = 5
+        n_orbitals = 4
         two_body_tensor = random_two_body_tensor(n_orbitals, real=True, chemist=True)
         leaf_tensors, core_tensors = _low_rank_two_body_decomposition(two_body_tensor)
 
