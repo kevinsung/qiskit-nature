@@ -1,0 +1,8 @@
+---
+features:
+  - |
+    Adds utilities to perform the low rank decomposition of a molecular Hamiltonian,
+    as described in `arXiv:1808.02625 <https://arxiv.org/abs/1808.02625>`_ and
+    `arXiv:2104.08957 <https://arxiv.org/abs/2104.08957>`_.
+    These utilities are exposed as
+    :func:`.low_rank_decomposition` and :func:`.low_rank_z_representation`.

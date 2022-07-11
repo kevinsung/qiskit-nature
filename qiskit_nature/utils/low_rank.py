@@ -87,9 +87,6 @@ def low_rank_decomposition(
         - `arXiv:1808.02625`_
         - `arXiv:2104.08957`_
 
-    .. _arXiv:1808.02625: https://arxiv.org/abs/1808.02625
-    .. _arXiv:2104.08957: https://arxiv.org/abs/2104.08957
-
     Args:
         one_body_tensor: The one-body tensor.
         two_body_tensor: The two-body tensor.
@@ -100,9 +97,9 @@ def low_rank_decomposition(
             If so, the interaction must be spin-symmetric.
         optimize: Whether to optimize the tensors returned by the decomposition.
         method: The optimization method. See the documentation of
-            `scipy.optimize.minimize` for possible values.
+            `scipy.optimize.minimize`_ for possible values.
         options: Options for the optimization. See the documentation of
-            `scipy.optimize.minimize` for usage.
+            `scipy.optimize.minimize`_ for usage.
         validate: Whether to check that the input tensors have the correct symmetries.
         atol: Absolute numerical tolerance for input validation.
 
@@ -112,6 +109,10 @@ def low_rank_decomposition(
 
     Raises:
         ValueError: The input tensors do not have the correct symmetries.
+
+    .. _arXiv:1808.02625: https://arxiv.org/abs/1808.02625
+    .. _arXiv:2104.08957: https://arxiv.org/abs/2104.08957
+    .. _scipy.optimize.minimize: https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.minimize.html
     """
     if validate:
         if not np.allclose(one_body_tensor, one_body_tensor.T.conj(), atol=atol):
