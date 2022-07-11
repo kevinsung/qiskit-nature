@@ -12,11 +12,13 @@
 
 """Methods to sample random objects."""
 
+import itertools
 from typing import Any
 
 import numpy as np
 from qiskit.quantum_info import random_hermitian
 from qiskit.utils import algorithm_globals
+
 from qiskit_nature.operators.second_quantization import QuadraticHamiltonian
 
 
@@ -27,7 +29,7 @@ def parse_random_seed(seed: Any) -> np.random.Generator:
     Args:
         seed: The pseudorandom number generator or seed. Should be an
             instance of `np.random.Generator` or else a valid input to
-            `np.random.default_rng`
+            `np.random.default_rng`.
 
     Returns:
         The np.random.Generator instance
@@ -46,7 +48,7 @@ def random_antisymmetric_matrix(dim: int, seed: Any = None) -> np.ndarray:
         dim: The width and height of the matrix.
         seed: The pseudorandom number generator or seed. Should be an
             instance of `np.random.Generator` or else a valid input to
-            `np.random.default_rng`
+            `np.random.default_rng`.
 
     Returns:
         The sampled antisymmetric matrix.
@@ -66,7 +68,7 @@ def random_quadratic_hamiltonian(
         num_conserving: whether the Hamiltonian should conserve particle number
         seed: The pseudorandom number generator or seed. Should be an
             instance of `np.random.Generator` or else a valid input to
-            `np.random.default_rng`
+            `np.random.default_rng`.
 
     Returns:
         The sampled QuadraticHamiltonian
@@ -80,3 +82,70 @@ def random_quadratic_hamiltonian(
     return QuadraticHamiltonian(
         hermitian_part=hermitian_part, antisymmetric_part=antisymmetric_part, constant=constant
     )
+
+
+def random_two_body_tensor(
+    n_orbitals: int, real: bool = False, chemist: bool = False, seed: Any = None
+) -> np.ndarray:
+    """Sample a random two-body tensor.
+
+    Args:
+        n_orbitals: The number of orbitals.
+        real: Whether the tensor should be real-valued.
+        chemist: Whether the tensor should use the "chemist" indexing convention.
+        seed: The pseudorandom number generator or seed. Should be an
+            instance of `np.random.Generator` or else a valid input to
+            `np.random.default_rng`.
+
+    Returns:
+        The sampled two-body tensor.
+    """
+    if chemist:
+        return _random_two_body_tensor_chemist(n_orbitals, real, seed)
+    return _random_two_body_tensor_physicist(n_orbitals, real, seed)
+
+
+def _random_two_body_tensor_chemist(n_orbitals: int, real: bool, seed: Any) -> np.ndarray:
+    rng = parse_random_seed(seed)
+    two_body_tensor = np.zeros(
+        (n_orbitals, n_orbitals, n_orbitals, n_orbitals),
+        dtype=float if real else complex,
+    )
+    for p, q, r, s in itertools.product(range(n_orbitals), repeat=4):
+        coeff: complex = rng.standard_normal()
+        if not real and len(set((p, q, r, s))) > 2:
+            coeff += 1j * rng.standard_normal()
+        two_body_tensor[p, q, r, s] = coeff
+        two_body_tensor[r, s, p, q] = coeff
+        two_body_tensor[q, p, s, r] = coeff.conjugate()
+        two_body_tensor[s, r, q, p] = coeff.conjugate()
+        if real:
+            two_body_tensor[q, p, r, s] = coeff
+            two_body_tensor[s, r, p, q] = coeff
+            two_body_tensor[p, q, s, r] = coeff
+            two_body_tensor[r, s, q, p] = coeff
+    return two_body_tensor
+
+
+def _random_two_body_tensor_physicist(  # pylint: disable=invalid-name
+    n_orbitals: int, real: bool, seed: Any
+) -> np.ndarray:
+    rng = parse_random_seed(seed)
+    two_body_tensor = np.zeros(
+        (n_orbitals, n_orbitals, n_orbitals, n_orbitals),
+        dtype=float if real else complex,
+    )
+    for p, q, r, s in itertools.product(range(n_orbitals), repeat=4):
+        coeff: complex = rng.standard_normal()
+        if not real and len(set((p, q, r, s))) > 2:
+            coeff += 1j * rng.standard_normal()
+        two_body_tensor[p, q, r, s] = coeff
+        two_body_tensor[q, p, s, r] = coeff
+        two_body_tensor[s, r, q, p] = coeff.conjugate()
+        two_body_tensor[r, s, p, q] = coeff.conjugate()
+        if real:
+            two_body_tensor[r, q, p, s] = coeff
+            two_body_tensor[s, p, q, r] = coeff
+            two_body_tensor[p, s, r, q] = coeff
+            two_body_tensor[q, r, s, p] = coeff
+    return two_body_tensor

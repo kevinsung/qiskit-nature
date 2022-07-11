@@ -25,11 +25,23 @@ Linear algebra utilities
 
    apply_matrix_to_slices
    givens_matrix
+   low_rank_decomposition
+   low_rank_z_representation
 """
 
-from .linalg import apply_matrix_to_slices, givens_matrix
+from .linalg import (
+    apply_matrix_to_slices,
+    givens_matrix,
+)
+
+from .low_rank import (
+    low_rank_decomposition,
+    low_rank_z_representation,
+)
 
 __all__ = [
     "apply_matrix_to_slices",
     "givens_matrix",
+    "low_rank_decomposition",
+    "low_rank_z_representation",
 ]
