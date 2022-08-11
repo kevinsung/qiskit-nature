@@ -275,7 +275,14 @@ def _bogoliubov_transform_general_jw(  # pylint: disable=invalid-name
 class BogoliubovTransformJW(Gate):
     """Bogoliubov transform under the Jordan-Wigner transformation."""
 
-    def __init__(self, transformation_matrix: np.ndarray, label: Optional[str] = None):
+    def __init__(
+        self,
+        transformation_matrix: np.ndarray,
+        label: Optional[str] = None,
+        validate: bool = True,
+        rtol: float = 1e-5,
+        atol: float = 1e-8,
+    ):
         """Create new Bogoliubov transform gate.
 
         Args:
@@ -284,16 +291,26 @@ class BogoliubovTransformJW(Gate):
                 Should be either :math:`N \times N` or :math:`N \times 2N`.
             label: The label of the gate.
         """
+        if validate:
+            _validate_transformation_matrix(transformation_matrix, rtol=rtol, atol=atol)
         self.transformation_matrix = transformation_matrix
         n, _ = transformation_matrix.shape
-        super().__init__("bog_jw", n, label=label)
+        super().__init__("bog_jw", n, [], label=label)
 
     def _define(self):
         """Gate decomposition."""
         n, _ = self.transformation_matrix.shape
         register = QuantumRegister(n)
-        self.definition = _bogoliubov_transform_jw(register, self.transformation_matrix)
+        circuit = QuantumCircuit(register, name=self.name)
+        for gate, qubits in _bogoliubov_transform_jw(register, self.transformation_matrix):
+            circuit.append(gate, qubits)
+        self.definition = circuit
 
     def inverse(self):
         """Inverse gate."""
-        raise
+        n, p = self.transformation_matrix.shape  # pylint: disable=invalid-name
+        if p == n:
+            return BogoliubovTransformJW(self.transformation_matrix.T.conj())
+        left = self.transformation_matrix[:, :n]
+        right = self.transformation_matrix[:, n:]
+        return BogoliubovTransformJW(np.concatenate([left.T.conj(), right.T], axis=1))

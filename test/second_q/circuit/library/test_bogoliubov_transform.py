@@ -12,6 +12,7 @@
 
 """Test Bogoliubov transform circuits."""
 
+from qiskit_nature.second_q import hamiltonians
 from test import QiskitNatureTestCase
 from test.random import random_quadratic_hamiltonian
 
@@ -20,7 +21,7 @@ from ddt import data, ddt, unpack
 from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.quantum_info import Operator, Statevector, random_hermitian, random_unitary
 
-from qiskit_nature.second_q.circuit.library import BogoliubovTransform
+from qiskit_nature.second_q.circuit.library import BogoliubovTransform, BogoliubovTransformJW
 from qiskit_nature.second_q.mappers import QubitConverter
 from qiskit_nature.second_q.mappers import (
     BravyiKitaevMapper,
@@ -134,3 +135,144 @@ class TestBogoliubovTransform(QiskitNatureTestCase):
         """Test passing unsupported mapper fails gracefully."""
         with self.assertRaisesRegex(NotImplementedError, "supported"):
             _ = BogoliubovTransform(np.eye(2), qubit_converter=QubitConverter(BravyiKitaevMapper()))
+
+
+@ddt
+class TestBogoliubovTransformJW(QiskitNatureTestCase):
+    """Tests for BogoliubovTransformJW gate."""
+
+    @unpack
+    @data((4, True), (5, True), (4, False), (5, False))
+    def test_bogoliubov_transform_jw(self, n_orbitals, num_conserving):
+        """Test Bogoliubov transform."""
+        hamiltonian = random_quadratic_hamiltonian(
+            n_orbitals, num_conserving=num_conserving, seed=5740
+        )
+        (
+            transformation_matrix,
+            orbital_energies,
+            transformed_constant,
+        ) = hamiltonian.diagonalizing_bogoliubov_transform()
+        matrix = JordanWignerMapper().map(hamiltonian.to_fermionic_op()).to_matrix()
+        bog = BogoliubovTransformJW(transformation_matrix)
+        for initial_state in range(2**n_orbitals):
+            state = Statevector.from_int(initial_state, dims=2**n_orbitals)
+            final_state = np.array(state.evolve(bog))
+            occupied_orbitals = [i for i in range(n_orbitals) if initial_state >> i & 1]
+            eig = np.sum(orbital_energies[occupied_orbitals]) + transformed_constant
+            np.testing.assert_allclose(matrix @ final_state, eig * final_state, atol=1e-8)
+
+    @data(4, 5)
+    def test_bogoliubov_transform_jw_compose_num_conserving(self, n_orbitals):
+        """Test Bogoliubov transform composition, particle-number-conserving."""
+        unitary1 = np.array(random_unitary(n_orbitals, seed=4331))
+        unitary2 = np.array(random_unitary(n_orbitals, seed=2506))
+
+        bog1 = BogoliubovTransformJW(unitary1)
+        bog2 = BogoliubovTransformJW(unitary2)
+        bog_composed = BogoliubovTransformJW(unitary1 @ unitary2)
+
+        register = QuantumRegister(n_orbitals)
+        circuit = QuantumCircuit(register)
+        circuit.append(bog1, register)
+        circuit.append(bog2, register)
+
+        self.assertTrue(Operator(circuit).equiv(Operator(bog_composed), atol=1e-8))
+
+    @data(4, 5)
+    def test_bogoliubov_transform_jw_compose_general(self, n_orbitals):
+        """Test Bogoliubov transform composition, general."""
+        hamiltonian1 = random_quadratic_hamiltonian(n_orbitals, num_conserving=False, seed=6990)
+        hamiltonian2 = random_quadratic_hamiltonian(n_orbitals, num_conserving=False, seed=1447)
+        transformation_matrix1, _, _ = hamiltonian1.diagonalizing_bogoliubov_transform()
+        transformation_matrix2, _, _ = hamiltonian2.diagonalizing_bogoliubov_transform()
+        composed_transformation_matrix = (
+            _expand_transformation_matrix(transformation_matrix1)
+            @ _expand_transformation_matrix(transformation_matrix2)
+        )[:n_orbitals]
+
+        bog1 = BogoliubovTransformJW(transformation_matrix1)
+        bog2 = BogoliubovTransformJW(transformation_matrix2)
+        bog_composed = BogoliubovTransformJW(composed_transformation_matrix)
+
+        register = QuantumRegister(n_orbitals)
+        circuit = QuantumCircuit(register)
+        circuit.append(bog1, register)
+        circuit.append(bog2, register)
+
+        self.assertTrue(Operator(circuit).equiv(Operator(bog_composed), atol=1e-8))
+
+    @data(4, 5)
+    def test_bogoliubov_transform_jw_compose_mixed(self, n_orbitals):
+        """Test Bogoliubov transform composition, mixed."""
+        small_mat = np.array(random_unitary(n_orbitals, seed=6492))
+        hamiltonian = random_quadratic_hamiltonian(n_orbitals, num_conserving=False, seed=5675)
+        big_mat, _, _ = hamiltonian.diagonalizing_bogoliubov_transform()
+
+        bog_small = BogoliubovTransformJW(small_mat)
+        bog_big = BogoliubovTransformJW(big_mat)
+
+        bog_composed = BogoliubovTransformJW(small_mat @ big_mat)
+        register = QuantumRegister(n_orbitals)
+        circuit = QuantumCircuit(register)
+        circuit.append(bog_small, register)
+        circuit.append(bog_big, register)
+        self.assertTrue(Operator(circuit).equiv(Operator(bog_composed), atol=1e-8))
+
+        left = big_mat[:, :n_orbitals]
+        right = big_mat[:, n_orbitals:]
+        composed_mat = np.concatenate([left @ small_mat, right @ small_mat.conj()], axis=1)
+        bog_composed = BogoliubovTransformJW(composed_mat)
+        register = QuantumRegister(n_orbitals)
+        circuit = QuantumCircuit(register)
+        circuit.append(bog_big, register)
+        circuit.append(bog_small, register)
+        self.assertTrue(Operator(circuit).equiv(Operator(bog_composed), atol=1e-8))
+
+    @data(4, 5)
+    def test_bogoliubov_transform_jw_inverse_num_conserving(self, n_orbitals):
+        """Test Bogoliubov transform composition, particle-number-conserving."""
+        mat = np.array(random_unitary(n_orbitals, seed=3142))
+        bog = BogoliubovTransformJW(mat)
+
+        register = QuantumRegister(n_orbitals)
+        circuit = QuantumCircuit(register)
+        circuit.append(bog, register)
+        circuit.append(bog.inverse(), register)
+
+        self.assertTrue(Operator(circuit).equiv(np.eye(2**n_orbitals), atol=1e-8))
+
+    @data(4, 5)
+    def test_bogoliubov_transform_jw_inverse_general(self, n_orbitals):
+        """Test Bogoliubov transform composition, general."""
+        hamiltonian = random_quadratic_hamiltonian(n_orbitals, num_conserving=False, seed=5037)
+        mat, _, _ = hamiltonian.diagonalizing_bogoliubov_transform()
+        bog = BogoliubovTransformJW(mat)
+
+        register = QuantumRegister(n_orbitals)
+        circuit = QuantumCircuit(register)
+        circuit.append(bog, register)
+        circuit.append(bog.inverse(), register)
+
+        self.assertTrue(Operator(circuit).equiv(np.eye(2**n_orbitals), atol=1e-8))
+
+    def test_no_side_effects(self):
+        """Test that the routines don't mutate the input array."""
+        n_orbitals = 5
+        hermitian_part = random_hermitian(n_orbitals).data
+        constant = np.random.uniform(-10, 10)
+
+        quad_ham = QuadraticHamiltonian(hermitian_part, constant=constant)
+        transformation_matrix, _, _ = quad_ham.diagonalizing_bogoliubov_transform()
+        original = transformation_matrix.copy()
+        _ = BogoliubovTransformJW(transformation_matrix)
+        np.testing.assert_allclose(transformation_matrix, original, atol=1e-8)
+
+    def test_validation(self):
+        """Test input validation."""
+        with self.assertRaisesRegex(ValueError, "2-dimensional"):
+            _ = BogoliubovTransformJW(np.ones((2, 2, 2)))
+        with self.assertRaisesRegex(ValueError, "shape"):
+            _ = BogoliubovTransformJW(np.ones((3, 2)))
+        with self.assertRaisesRegex(ValueError, "shape"):
+            _ = BogoliubovTransformJW(np.ones((2, 3)))

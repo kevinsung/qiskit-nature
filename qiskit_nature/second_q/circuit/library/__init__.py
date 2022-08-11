@@ -24,6 +24,7 @@ A collection of circuits used as building blocks or inputs for algorithms.
 
 
    BogoliubovTransform
+   BogoliubovTransformJW
 
 Initial states
 --------------
@@ -78,7 +79,7 @@ from .ansatzes import (
 
 from .initial_states import FermionicGaussianState, HartreeFock, SlaterDeterminant, VSCF
 
-from .bogoliubov_transform import BogoliubovTransform
+from .bogoliubov_transform import BogoliubovTransform, BogoliubovTransformJW
 
 __all__ = [
     "UCC",
@@ -93,4 +94,5 @@ __all__ = [
     "FermionicGaussianState",
     "SlaterDeterminant",
     "BogoliubovTransform",
+    "BogoliubovTransformJW",
 ]
