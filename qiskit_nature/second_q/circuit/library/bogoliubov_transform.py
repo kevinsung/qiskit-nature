@@ -270,3 +270,30 @@ def _bogoliubov_transform_general_jw(  # pylint: disable=invalid-name
     )
     yield from _bogoliubov_transform_num_conserving_jw(register, left_unitary.T)
     yield from reversed(decomposition)
+
+
+class BogoliubovTransformJW(Gate):
+    """Bogoliubov transform under the Jordan-Wigner transformation."""
+
+    def __init__(self, transformation_matrix: np.ndarray, label: Optional[str] = None):
+        """Create new Bogoliubov transform gate.
+
+        Args:
+            transformation_matrix: The matrix :math:`W` that specifies the coefficients of the
+                new creation operators in terms of the original creation operators.
+                Should be either :math:`N \times N` or :math:`N \times 2N`.
+            label: The label of the gate.
+        """
+        self.transformation_matrix = transformation_matrix
+        n, _ = transformation_matrix.shape
+        super().__init__("bog_jw", n, label=label)
+
+    def _define(self):
+        """Gate decomposition."""
+        n, _ = self.transformation_matrix.shape
+        register = QuantumRegister(n)
+        self.definition = _bogoliubov_transform_jw(register, self.transformation_matrix)
+
+    def inverse(self):
+        """Inverse gate."""
+        raise
