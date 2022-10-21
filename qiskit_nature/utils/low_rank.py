@@ -141,9 +141,10 @@ class DoubleFactorizedHamiltonian:
 def low_rank_decomposition(
     hamiltonian: ElectronicEnergy,
     *,
-    truncation_threshold: float = 1e-8,
     max_rank: Optional[int] = None,
+    truncation_threshold: float = 1e-8,
     z_representation: bool = False,
+    cholesky: bool = False,
     optimize: bool = False,
     method: str = "L-BFGS-B",
     options: Optional[dict] = None,
@@ -287,6 +288,7 @@ def low_rank_decomposition(
             two_body_tensor,
             max_rank=max_rank,
             truncation_threshold=truncation_threshold,
+            cholesky=cholesky,
             method=method,
             options=options,
             core_tensor_mask=core_tensor_mask,
@@ -299,6 +301,7 @@ def low_rank_decomposition(
             two_body_tensor,
             max_rank=max_rank,
             truncation_threshold=truncation_threshold,
+            cholesky=cholesky,
             validate=validate,
             atol=atol,
         )
@@ -318,8 +321,79 @@ def low_rank_decomposition(
 def _low_rank_two_body_decomposition(  # pylint: disable=invalid-name
     two_body_tensor: np.ndarray,
     *,
-    truncation_threshold: float = 1e-8,
     max_rank: Optional[int] = None,
+    truncation_threshold: float = 1e-8,
+    cholesky: bool = False,
+    validate: bool = True,
+    atol: float = 1e-8,
+) -> tuple[np.ndarray, np.ndarray]:
+    if cholesky:
+        return _low_rank_two_body_decomposition_cholesky(
+            two_body_tensor,
+            truncation_threshold=truncation_threshold,
+            max_rank=max_rank,
+            validate=validate,
+            atol=atol,
+        )
+    return _low_rank_two_body_decomposition_eigh(
+        two_body_tensor,
+        truncation_threshold=truncation_threshold,
+        max_rank=max_rank,
+        validate=validate,
+        atol=atol,
+    )
+
+
+def _low_rank_two_body_decomposition_eigh(  # pylint: disable=invalid-name
+    two_body_tensor: np.ndarray,
+    *,
+    max_rank: Optional[int] = None,
+    truncation_threshold: float = 1e-8,
+    validate: bool = True,
+    atol: float = 1e-8,
+) -> tuple[np.ndarray, np.ndarray]:
+    n_modes, _, _, _ = two_body_tensor.shape
+    if max_rank is None:
+        max_rank = n_modes ** (n_modes + 1) // 2
+    reshaped_tensor = np.reshape(two_body_tensor, (n_modes**2, n_modes**2))
+
+    if validate:
+        if not np.all(np.isreal(reshaped_tensor)):
+            raise ValueError("Two-body tensor must be real.")
+        if not np.allclose(reshaped_tensor, reshaped_tensor.T, atol=atol):
+            raise ValueError("Two-body tensor must be symmetric.")
+
+    outer_eigs, outer_vecs = np.linalg.eigh(reshaped_tensor)
+    # sort by absolute value
+    indices = np.argsort(np.abs(outer_eigs))
+    outer_eigs = outer_eigs[indices]
+    outer_vecs = outer_vecs[:, indices]
+    # get index to truncate at
+    index = int(np.searchsorted(np.cumsum(np.abs(outer_eigs)), truncation_threshold))
+    # truncate, then reverse to put into descending order of absolute value
+    outer_eigs = outer_eigs[index:][::-1]
+    outer_vecs = outer_vecs[:, index:][:, ::-1]
+    # truncate to final rank
+    outer_eigs = outer_eigs[:max_rank]
+    outer_vecs = outer_vecs[:, :max_rank]
+
+    leaf_tensors = []
+    core_tensors = []
+    for outer_eig, outer_vec in zip(outer_eigs, outer_vecs.T):
+        mat = np.reshape(outer_vec, (n_modes, n_modes))
+        inner_eigs, inner_vecs = np.linalg.eigh(mat)
+        core_tensor = outer_eig * np.outer(inner_eigs, inner_eigs)
+        leaf_tensors.append(inner_vecs)
+        core_tensors.append(core_tensor)
+
+    return np.array(leaf_tensors), np.array(core_tensors)
+
+
+def _low_rank_two_body_decomposition_cholesky(  # pylint: disable=invalid-name
+    two_body_tensor: np.ndarray,
+    *,
+    max_rank: Optional[int] = None,
+    truncation_threshold: float = 1e-8,
     validate: bool = True,
     atol: float = 1e-8,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -408,6 +482,7 @@ def _low_rank_compressed_two_body_decomposition(  # pylint: disable=invalid-name
     *,
     truncation_threshold: float = 1e-8,
     max_rank: Optional[int] = None,
+    cholesky: bool = False,
     method="L-BFGS-B",
     options: Optional[dict] = None,
     core_tensor_mask: Optional[np.ndarray] = None,
@@ -420,6 +495,7 @@ def _low_rank_compressed_two_body_decomposition(  # pylint: disable=invalid-name
         two_body_tensor,
         truncation_threshold=truncation_threshold,
         max_rank=max_rank,
+        cholesky=cholesky,
         validate=validate,
         atol=atol,
     )
